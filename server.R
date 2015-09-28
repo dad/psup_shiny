@@ -1,18 +1,14 @@
 # install.packages(c("shiny","data.table","ggplot2","devtools"))
 # devtools::install_github("aoles/shinyURL")
+# query strings:
+# psup_shiny/?ids=PGK1,OLA1,PMA1&idType=gene&interval=F&plotType=time
+# psup_shiny/?ids=YER165W&idType=orf&interval=T&plotType=time
 
 library(shiny)
-library(data.table)
 library(ggplot2)
 library(shinyURL)
 
-##### 
-# To do:
-# -- paper reference on user interface
-# -- switch to view by orf DONE
-# -- specify orf by url
-
-ps_dt <- data.table(read.table("scer_aggregation_psup_long.txt",stringsAsFactors=FALSE,header=TRUE))
+ps_dt <- read.table("scer_aggregation_psup_long.txt",stringsAsFactors=FALSE,header=TRUE)
 
 theme_set(theme_minimal(base_size=14) %+replace% theme(legend.position="none"))
 
@@ -82,10 +78,10 @@ plotmygenes <- function(mygenes,data=ps_dt,
 
 }
 
-# Define server logic required to draw a histogram
+# Define server logic required to draw a plot
 shinyServer(function(input, output,session) {
     
-    # Expression that generates a histogram. The expression is
+    # Expression that generates a timecourse. The expression is
     # wrapped in a call to renderPlot to indicate that:
     #
     #  1) It is "reactive" and therefore should re-execute automatically
@@ -102,10 +98,5 @@ shinyServer(function(input, output,session) {
             return(plots$plot_temp)
         }
     })
-    #     output$tempPlot <- renderPlot({
-    #         # temperature plot of 46C psup
-    #         genes <- strsplit(input$genes,",")[[1]]
-    #         plotmygenes(genes,errorbars=input$interval)$plot_temp
-    #     })
     shinyURL.server(session)
 })

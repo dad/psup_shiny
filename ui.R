@@ -31,7 +31,6 @@ shinyUI(fluidPage(
           Wallace et al., Cell 162 (6), 2015, http://drummondlab.org/endogenous-aggregates")
     ),
     
-    #mainPanel(
+    # Include button/text box for URL.
     shinyURL.ui()
-    #)
 ))
