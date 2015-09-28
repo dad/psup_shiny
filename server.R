@@ -1,6 +1,10 @@
+# install.packages(c("shiny","data.table","ggplot2","devtools"))
+# devtools::install_github("aoles/shinyURL")
+
 library(shiny)
 library(data.table)
 library(ggplot2)
+library(shinyURL)
 
 ##### 
 # To do:
@@ -79,7 +83,7 @@ plotmygenes <- function(mygenes,data=ps_dt,
 }
 
 # Define server logic required to draw a histogram
-shinyServer(function(input, output) {
+shinyServer(function(input, output,session) {
     
     # Expression that generates a histogram. The expression is
     # wrapped in a call to renderPlot to indicate that:
@@ -98,9 +102,10 @@ shinyServer(function(input, output) {
             return(plots$plot_temp)
         }
     })
-#     output$tempPlot <- renderPlot({
-#         # temperature plot of 46C psup
-#         genes <- strsplit(input$genes,",")[[1]]
-#         plotmygenes(genes,errorbars=input$interval)$plot_temp
-#     })
+    #     output$tempPlot <- renderPlot({
+    #         # temperature plot of 46C psup
+    #         genes <- strsplit(input$genes,",")[[1]]
+    #         plotmygenes(genes,errorbars=input$interval)$plot_temp
+    #     })
+    shinyURL.server(session)
 })
