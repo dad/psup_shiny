@@ -17,10 +17,10 @@ scale_y_pSup <- function(name=NULL) {
     list(scale_y_continuous(name,expand=c(0.01,0),limits=c(0,1),
                        #breaks=seq(0,1,.25),labels=c("0","","0.5","","1"))
                        breaks=c(0,1)),
-         theme(axis.title.y=element_text(angle=0)))
+         theme(axis.title.y=element_text(angle=0, vjust=0.5)))
 }
 
-scale_time <- function(name=expression("time at "*46*degree~C*" (mins)"),
+scale_time <- function(name=expression("Minutes at "*46*degree~C*""),
                        text=TRUE) {
     if (text) {
         mylim=c(0,9.9)
@@ -69,8 +69,8 @@ plotmygenes <- function(mygenes,data=ps_dt,
                                    colour=idType,label=idType)) +
         geom_line(size=linesize) +
         geom_text_repel(size=4,data=subset(ps_dt_time,time==max(time)),
-                  aes(x=max(time)+1.2,y=psup)) +
-        scale_y_pSup("pSup") + scale_time()
+                  aes(x=max(time)+0.1,y=psup), xlim=c(8,12)) +
+        scale_y_pSup("Proportion\nin\nsupernatant") + scale_time()
     
     if (errorbars) {
         plot_temp <- plot_temp + geom_pointrange()
