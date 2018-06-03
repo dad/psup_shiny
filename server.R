@@ -4,12 +4,17 @@
 # psup_shiny/?ids=PGK1,OLA1,PMA1&idType=gene&interval=F&plotType=time
 # psup_shiny/?ids=YER165W&idType=orf&interval=T&plotType=time
 
+# To publish:
+# runGitHub( "psup_shiny", "dad")
+# and Publish
+
 library(shiny)
 library(ggplot2)
 library(ggrepel)
+library(tidyverse)
 library(shinyURL)
 
-ps_dt <- read.table("scer_aggregation_psup_long.txt",stringsAsFactors=FALSE,header=TRUE)
+ps_dt <- read_tsv("scer_aggregation_psup_long.txt", comment='#') #,stringsAsFactors=FALSE,header=TRUE)
 
 theme_set(theme_minimal(base_size=14) %+replace% theme(legend.position="none"))
 
@@ -42,11 +47,11 @@ plotmygenes <- function(mygenes,data=ps_dt,
     names(times) <- timeexps
     
     if(idType=="gene") {
-        ps_dt_temp <- subset(ps_dt, gene %in% mygenes & experiment %in% tempexps)
-        ps_dt_time <- subset(ps_dt, gene %in% mygenes & experiment %in% timeexps)
+        ps_dt_temp <- ps_dt %>% filter(gene %in% mygenes & experiment %in% tempexps)
+        ps_dt_time <- ps_dt %>% filter(gene %in% mygenes & experiment %in% timeexps)
     } else if(idType=="orf") {
-        ps_dt_temp <- subset(ps_dt, orf %in% mygenes & experiment %in% tempexps)
-        ps_dt_time <- subset(ps_dt, orf %in% mygenes & experiment %in% timeexps)
+        ps_dt_temp <- ps_dt %>% filter(orf %in% mygenes & experiment %in% tempexps)
+        ps_dt_time <- ps_dt %>% filter(orf %in% mygenes & experiment %in% timeexps)
     } else {
         stop("idType must be gene or orf")
     }
