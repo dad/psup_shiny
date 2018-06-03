@@ -6,6 +6,7 @@
 
 library(shiny)
 library(ggplot2)
+library(ggrepel)
 library(shinyURL)
 
 ps_dt <- read.table("scer_aggregation_psup_long.txt",stringsAsFactors=FALSE,header=TRUE)
@@ -54,10 +55,12 @@ plotmygenes <- function(mygenes,data=ps_dt,
                         aes_string(x="temp",y="psup",ymin="psup.lo",ymax="psup.hi",
                                    colour=idType,label=idType)) +
         geom_line(size=linesize) + 
-        geom_text(size=4,data=subset(ps_dt_temp,temp==max(temp)),
-                  aes(x=max(temp)+2,y=psup)) +
-        scale_x_continuous(expression("temperature "*(degree*C)*" of 8 min shock"),breaks=tempbreaks,labels=tempbreaks) +
-        scale_y_pSup("pSup")
+        geom_text_repel(size=4,data=ps_dt_temp %>% filter(temp==max(temp)),
+                  aes(x=max(temp)+0.5,y=psup), xlim=c(46,52)) +
+        coord_cartesian(xlim=c(30,52)) +
+        scale_x_continuous(expression("Temperature "*(degree*C)*" of 8 min. treatment"),
+            breaks=tempbreaks,labels=tempbreaks, expand=c(0,0)) +
+        scale_y_pSup("Proportion\nin\nsupernatant")
     
     ps_dt_time$time <- times[ps_dt_time$experiment ]
     
@@ -65,8 +68,8 @@ plotmygenes <- function(mygenes,data=ps_dt,
                         aes_string(x="time",y="psup",ymin="psup.lo",ymax="psup.hi",
                                    colour=idType,label=idType)) +
         geom_line(size=linesize) +
-        geom_text(size=4,data=subset(ps_dt_time,time==max(time)),
-                  aes(x=max(time)+1.1,y=psup)) +
+        geom_text_repel(size=4,data=subset(ps_dt_time,time==max(time)),
+                  aes(x=max(time)+1.2,y=psup)) +
         scale_y_pSup("pSup") + scale_time()
     
     if (errorbars) {
