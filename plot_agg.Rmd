@@ -29,6 +29,24 @@ ps_dt = read_tsv("./scer_aggregation_psup_long.txt", comment='#')
 theme_set(theme_minimal(base_size=14) %+replace% theme(legend.position="none"))
 ```
 ```{r funcs}
+
+splitstring = function(s) {
+  # Take string formatted as "ribosomal=(RPS1,RPS2); glycolytic=(GLK1,TDH3)" and split into a
+  # list(ribosomal=('RPS1','RPS2'), glycolytic=c('GLK1','TDH3'))
+  if (T) {  s = "ribosomal=(RPS1,RPS2); glycolytic=(GLK1,TDH3)" }
+  classes = str_split(s,';')[[1]]
+  x = sapply(classes, function(ss) {
+    res = str_split(ss,'=')[[1]]
+    label=gsub("[[:space:]]",'',res[1])
+    genes=str_split(gsub("\\((.*)\\)", "\\1",res[2]),',')[[1]]
+    g = list(g=genes)
+    names(g)[1] = label
+    print(g)
+    g
+  }, USE.NAMES = F)
+  x
+}
+
 scale_y_pSup = function(name=NULL) {
     list(scale_y_continuous(name,expand=c(0.01,0),limits=c(0,1),
                        #breaks=seq(0,1,.25),labels=c("0","","0.5","","1"))
@@ -161,10 +179,45 @@ plotgenes_categories = function(gene_cat_list,data=ps_dt,
 
 
 ```{r agg}
-ribgenes = unique(unlist(ps_dt |> filter(substring(gene, 1,3) %in% c('RPL','RPS')) |> select(gene)))
-rib2genes = setdiff(ribgenes, c('RPL23B','RPS14B','RPL38','RPL39','RPS27'))
-agggenes = c('PAB1','DED1','XRN1','DCP1','NUG1','OLA1')
-p = plotgenes_categories(list("ribosomal"=ribgenes, "aggregator"=agggenes), idType='gene', errorbars = TRUE)
-p$plot_temp
+splitstring = function(s) {
+  # Take string formatted as "ribosomal=(RPS1,RPS2); glycolytic=(GLK1,TDH3)" and split into a
+  # list(ribosomal=('RPS1','RPS2'), glycolytic=c('GLK1','TDH3'))
+  if (T) {  s = "ribosomal=(rps1,RPS2); glycolytic=(GLK1,TDH3)" }
+  classes = str_split(s,';')[[1]]
+  x = sapply(classes, function(ss) {
+    res = str_split(ss,'=')[[1]]
+    label=gsub("[[:space:]]",'',res[1])
+    genes=sapply(str_split(gsub("\\((.*)\\)", "\\1",res[2]),',')[[1]], toupper, USE.NAMES = F)
+    g = list(g=genes)
+    names(g)[1] = label
+    print(g)
+    g
+  }, USE.NAMES = F)
+  x
+}
+
+plot_from_input = function(s, errorbars, idType) {
+  if (grepl('=',s,fixed=TRUE)) { 
+    # This is a named list
+    ids = splitstring(s)
+    print(paste("named categories:",ids))
+    fun = plotgenes_categories
+  } else {
+    ids = toupper(strsplit(gsub(" ", "", s, fixed = TRUE),",")[[1]])
+    print(paste("flat list:",ids))
+    fun = plotmygenes
+  }
+  print(ids)
+  print(idType)
+  fun(ids, errorbars=errorbars, idType=idType)
+}
+
+#splitstring('s')
+plot_from_input("PAB1,PGK1,PMA1", FALSE, "gene")
+#ribgenes = unique(unlist(ps_dt |> filter(substring(gene, 1,3) %in% c('RPL','RPS')) |> select(gene)))
+#rib2genes = setdiff(ribgenes, c('RPL23B','RPS14B','RPL38','RPL39','RPS27'))
+#agggenes = c('PAB1','DED1','XRN1','DCP1','NUG1','OLA1')
+#p = plotgenes_categories(list("ribosomal"=ribgenes, "aggregator"=agggenes), idType='gene', errorbars = TRUE)
+#p$plot_temp
 
 ```
