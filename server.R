@@ -21,15 +21,24 @@ theme_set(theme_minimal(base_size=14) %+replace% theme(legend.position="none"))
 splitstring = function(s) {
   # Take string formatted as "ribosomal=(RPS1,RPS2); glycolytic=(GLK1,TDH3)" and split into a
   # list(ribosomal=('RPS1','RPS2'), glycolytic=c('GLK1','TDH3'))
-  #if (T) {  s = "ribosomal=(rps1,RPS2); glycolytic=(GLK1,TDH3)" }
+  #if (T) {  s = "ribosomal=(rps1,RPS2); glycolytic=(GLK1,TDH3); agg=(ded1,pab1); pma1" }
   classes = str_split(s,';')[[1]]
+  
   x = sapply(classes, function(ss) {
     res = str_split(ss,'=')[[1]]
-    label=gsub("[[:space:]]",'',res[1])
-    genes=toupper(str_split(gsub("\\((.*)\\)", "\\1",res[2]),',')[[1]])
+    if (length(res)==2){
+      label=gsub("[[:space:]]",'',res[1])
+      genenames = res[2]
+    } else {
+      # No label; use gene as label
+      trimname = gsub("[[:space:]]",'',res[1])
+      label=toupper(trimname)
+      genenames = trimname
+    }
+    genes=toupper(str_split(gsub("\\((.*)\\)", "\\1",genenames),',')[[1]])
     g = list(g=genes)
     names(g)[1] = label
-    print(g)
+    #print(g)
     g
   }, USE.NAMES = F)
   x
@@ -53,54 +62,55 @@ scale_time <- function(name=expression("Minutes at "*46*degree~C*""),
                        breaks=c(0,2,4,8))
 }
 
-plotmygenes <- function(mygenes,data=ps_dt,
-                        tempexps=c("30C.rep2","37C.8min","42C.8min","46C.8min"),
-                        temps=c(30,37,42,46), tempbreaks=temps,
-                        timeexps=c("30C.rep1","46C.2min","46C.4min","46C.8min"),
-                        times=c(0,2,4,8), 
-                        errorbars=FALSE,linesize=0.8,
-                        idType=c("gene","orf")) {
-    names(temps) <- tempexps
-    names(times) <- timeexps
-    
-    if(idType=="gene") {
-        ps_dt_temp <- ps_dt %>% filter(gene %in% mygenes & experiment %in% tempexps)
-        ps_dt_time <- ps_dt %>% filter(gene %in% mygenes & experiment %in% timeexps)
-    } else if(idType=="orf") {
-        ps_dt_temp <- ps_dt %>% filter(orf %in% mygenes & experiment %in% tempexps)
-        ps_dt_time <- ps_dt %>% filter(orf %in% mygenes & experiment %in% timeexps)
-    } else {
-        stop("idType must be gene or orf")
-    }
-    ps_dt_temp$temp <- temps[ps_dt_temp$experiment ]
-    plot_temp <- ggplot(data=ps_dt_temp,
-                        aes_string(x="temp",y="psup",ymin="psup.lo",ymax="psup.hi",
-                                   colour=idType,label=idType)) +
-        geom_line(size=linesize) + 
-        geom_text_repel(size=4,data=ps_dt_temp %>% filter(temp==max(temp)),
-                  aes(x=max(temp)+0.5,y=psup), xlim=c(46,52)) +
-        coord_cartesian(xlim=c(30,52)) +
-        scale_x_continuous(expression("Temperature "*(degree*C)*" of 8 min. treatment"),
-            breaks=tempbreaks,labels=tempbreaks, expand=c(0,0)) +
-        scale_y_pSup("Proportion\nin\nsupernatant")
-    
-    ps_dt_time$time <- times[ps_dt_time$experiment ]
-    
-    plot_time <- ggplot(data=ps_dt_time,
-                        aes_string(x="time",y="psup",ymin="psup.lo",ymax="psup.hi",
-                                   colour=idType,label=idType)) +
-        geom_line(size=linesize) +
-        geom_text_repel(size=4,data=subset(ps_dt_time,time==max(time)),
-                  aes(x=max(time)+0.1,y=psup), xlim=c(8,12)) +
-        scale_y_pSup("Proportion\nin\nsupernatant") + scale_time()
-    
-    if (errorbars) {
-        plot_temp <- plot_temp + geom_pointrange()
-        plot_time <- plot_time + geom_pointrange()
-    }
-    
-    return(list(plot_time=plot_time,plot_temp=plot_temp))
-
+plotmygenes = function(mygenes,data=ps_dt,
+                       tempexps=c("30C.rep2","37C.8min","42C.8min","46C.8min"),
+                       temps=c(30,37,42,46), tempbreaks=temps,
+                       timeexps=c("30C.rep1","46C.2min","46C.4min","46C.8min"),
+                       times=c(0,2,4,8), 
+                       errorbars=FALSE,linewidth=0.8,
+                       idType=c("gene","orf")) {
+  names(temps) = tempexps
+  names(times) = timeexps
+  
+  if(idType=="gene") {
+    ps_dt_temp = ps_dt |> filter(gene %in% mygenes & experiment %in% tempexps)
+    ps_dt_time = ps_dt |> filter(gene %in% mygenes & experiment %in% timeexps)
+  } else if(idType=="orf") {
+    ps_dt_temp = ps_dt |> filter(orf %in% mygenes & experiment %in% tempexps)
+    ps_dt_time = ps_dt |> filter(orf %in% mygenes & experiment %in% timeexps)
+  } else {
+    stop("idType must be gene or orf")
+  }
+  ps_dt_temp$temp = temps[ps_dt_temp$experiment ]
+  plot_temp = ggplot(data=ps_dt_temp,
+                     aes(x=.data[["temp"]],y=.data[["psup"]],ymin=.data[["psup.lo"]],ymax=.data[["psup.hi"]],
+                         colour=idType,label=idType)) +
+    geom_line(linewidth=linewidth) + 
+    geom_text_repel(size=4,data=ps_dt_temp |> filter(temp==max(temp)),
+                    aes(x=max(temp)+0.5,y=psup), xlim=c(46,52)) +
+    coord_cartesian(xlim=c(30,52)) +
+    #        scale_x_continuous(expression("Temperature "*(degree*C)*" of 8 min. treatment"),
+    scale_x_continuous("Temperature (\u00b0C) of 8 min. treatment",
+                       breaks=tempbreaks,labels=tempbreaks, expand=c(0,0)) +
+    scale_y_pSup("Proportion\nin\nsupernatant")
+  
+  ps_dt_time$time = times[ps_dt_time$experiment ]
+  
+  plot_time = ggplot(data=ps_dt_time,
+                     aes_string(x="time",y="psup",ymin="psup.lo",ymax="psup.hi",
+                                colour=idType,label=idType)) +
+    geom_line(size=linewidth) +
+    geom_text_repel(size=4,data=subset(ps_dt_time,time==max(time)),
+                    aes(x=max(time)+0.1,y=psup), xlim=c(8,12)) +
+    scale_y_pSup("Proportion\nin\nsupernatant") + scale_time()
+  
+  if (errorbars) {
+    plot_temp = plot_temp + geom_pointrange()
+    plot_time = plot_time + geom_pointrange()
+  }
+  
+  return(list(plot_time=plot_time,plot_temp=plot_temp))
+  
 }
 
 plotgenes_categories = function(gene_cat_list,data=ps_dt,
@@ -149,7 +159,7 @@ plotgenes_categories = function(gene_cat_list,data=ps_dt,
   plot_time = ggplot(data=ps_dt_time,
                      aes(x=.data[["time"]],y=.data[["psup"]],ymin=.data[["psup.lo"]],ymax=.data[["psup.hi"]],
                          colour=category,label=category)) +
-    geom_line(size=linesize) +
+    geom_line(size=linewidth) +
     geom_text_repel(size=4,data=subset(ps_dt_time,time==max(times)),
                     aes(x=max(times)+0.1,y=psup), xlim=c(8,12)) +
     scale_y_pSup("Proportion\nin\nsupernatant") + scale_time()
