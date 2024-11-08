@@ -89,7 +89,7 @@ plotmygenes = function(mygenes,data=ps_dt,
                         aes(x=.data[["temp"]],y=.data[["psup"]],ymin=.data[["psup.lo"]],ymax=.data[["psup.hi"]],
                                    colour=idType,label=idType)) +
         geom_line(linewidth=linewidth) + 
-        geom_text_repel(size=4,data=ps_dt_temp |> filter(temp==max(temp)),
+        geom_text_repel(size=4,data=ps_dt_temp |> filter(temp==max(temps)),
                   aes(x=max(temp)+0.5,y=psup), xlim=c(46,52)) +
         coord_cartesian(xlim=c(30,52)) +
 #        scale_x_continuous(expression("Temperature "*(degree*C)*" of 8 min. treatment"),
@@ -103,7 +103,7 @@ plotmygenes = function(mygenes,data=ps_dt,
                         aes_string(x="time",y="psup",ymin="psup.lo",ymax="psup.hi",
                                    colour=idType,label=idType)) +
         geom_line(size=linewidth) +
-        geom_text_repel(size=4,data=subset(ps_dt_time,time==max(time)),
+        geom_text_repel(size=4,data=subset(ps_dt_time,time==max(times)),
                   aes(x=max(time)+0.1,y=psup), xlim=c(8,12)) +
         scale_y_pSup("Proportion\nin\nsupernatant") + scale_time()
     
@@ -182,7 +182,7 @@ plotgenes_categories = function(gene_cat_list,data=ps_dt,
 splitstring = function(s) {
   # Take string formatted as "ribosomal=RPS1,RPS2; glycolytic=GLK1,TDH3" and split into a
   # list(ribosomal=('RPS1','RPS2'), glycolytic=c('GLK1','TDH3'))
-  #if (T) {  s = "ribosomal=(RPL32,RPL4A,RPL19A,RPS9B,RPL21A,RPS29B,RPL31A,RPL35A,RPL4B); glycolytic=(GLK1,TDH3); agg=(ded1,pab1); pma1; pgk1" }
+  #if (T) {  s = "ribosomal=RPL32,RPL4A,RPL19A,RPS9B,RPL21A,RPS29B,RPL31A,RPL35A,RPL4B; glycolytic=GLK1,TDH3; agg=ded1,pab1; pma1; pgk1" }
   classes = str_split(s,';')[[1]]
   
   x = sapply(classes, function(ss) {

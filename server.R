@@ -62,7 +62,7 @@ scale_time <- function(name=expression("Minutes at "*46*degree~C*""),
                        breaks=c(0,2,4,8))
 }
 
-plotmygenes = function(mygenes,data=ps_dt,
+plotgenes_flat = function(mygenes,data=ps_dt,
                        tempexps=c("30C.rep2","37C.8min","42C.8min","46C.8min"),
                        temps=c(30,37,42,46), tempbreaks=temps,
                        timeexps=c("30C.rep1","46C.2min","46C.4min","46C.8min"),
@@ -71,45 +71,14 @@ plotmygenes = function(mygenes,data=ps_dt,
                        idType=c("gene","orf")) {
   names(temps) = tempexps
   names(times) = timeexps
-  
-  if(idType=="gene") {
-    ps_dt_temp = ps_dt |> filter(gene %in% mygenes & experiment %in% tempexps)
-    ps_dt_time = ps_dt |> filter(gene %in% mygenes & experiment %in% timeexps)
-  } else if(idType=="orf") {
-    ps_dt_temp = ps_dt |> filter(orf %in% mygenes & experiment %in% tempexps)
-    ps_dt_time = ps_dt |> filter(orf %in% mygenes & experiment %in% timeexps)
-  } else {
-    stop("idType must be gene or orf")
-  }
-  ps_dt_temp$temp = temps[ps_dt_temp$experiment ]
-  plot_temp = ggplot(data=ps_dt_temp,
-                     aes(x=.data[["temp"]],y=.data[["psup"]],ymin=.data[["psup.lo"]],ymax=.data[["psup.hi"]],
-                         colour=idType,label=idType)) +
-    geom_line(linewidth=linewidth) + 
-    geom_text_repel(size=4,data=ps_dt_temp |> filter(temp==max(temp)),
-                    aes(x=max(temp)+0.5,y=psup), xlim=c(46,52)) +
-    coord_cartesian(xlim=c(30,52)) +
-    #        scale_x_continuous(expression("Temperature "*(degree*C)*" of 8 min. treatment"),
-    scale_x_continuous("Temperature (\u00b0C) of 8 min. treatment",
-                       breaks=tempbreaks,labels=tempbreaks, expand=c(0,0)) +
-    scale_y_pSup("Proportion\nin\nsupernatant")
-  
-  ps_dt_time$time = times[ps_dt_time$experiment ]
-  
-  plot_time = ggplot(data=ps_dt_time,
-                     aes_string(x="time",y="psup",ymin="psup.lo",ymax="psup.hi",
-                                colour=idType,label=idType)) +
-    geom_line(size=linewidth) +
-    geom_text_repel(size=4,data=subset(ps_dt_time,time==max(time)),
-                    aes(x=max(time)+0.1,y=psup), xlim=c(8,12)) +
-    scale_y_pSup("Proportion\nin\nsupernatant") + scale_time()
-  
-  if (errorbars) {
-    plot_temp = plot_temp + geom_pointrange()
-    plot_time = plot_time + geom_pointrange()
-  }
-  
-  return(list(plot_time=plot_time,plot_temp=plot_temp))
+
+  ps_dt_temp = ps_dt |> filter(.data[[idType]] %in% mygenes & experiment %in% tempexps)
+  ps_dt_time = ps_dt |> filter(.data[[idType]] %in% mygenes & experiment %in% timeexps)
+
+  ps_dt_temp$temp = temps[ps_dt_temp$experiment]
+  ps_dt_time$time = times[ps_dt_time$experiment]
+  #list(time=ps_dt_time, temp=ps_dt_temp)
+  return(plotgenes(ps_dt_time, ps_dt_temp, tempexps, temps, tempbreaks, timeexps, times, errorbars, linewidth, idType))
   
 }
 
@@ -138,13 +107,28 @@ plotgenes_categories = function(gene_cat_list,data=ps_dt,
   }))
   
   # Summarize by category
-  ps_dt_temp = ps_dt_temp_all |> group_by(experiment, category) |> summarise(sd=sd(psup,na.rm=T), se=sd/sqrt(n()), psup=mean(psup), psup.lo=psup-sd, psup.hi=psup+sd, category=first(category))
-  ps_dt_time = ps_dt_time_all |> group_by(experiment, category) |> summarise(sd=sd(psup,na.rm=T), se=sd/sqrt(n()), psup=mean(psup), psup.lo=psup-sd, psup.hi=psup+sd, category=first(category))
+  ps_dt_temp = ps_dt_temp_all |> group_by(experiment, category) |> summarise(sd=sd(psup,na.rm=T), se=sd/sqrt(n()), psup=mean(psup), psup.lo=psup-sd, psup.hi=psup+sd, 
+                                                                             gene=first(category), orf=first(category))
+  ps_dt_time = ps_dt_time_all |> group_by(experiment, category) |> summarise(sd=sd(psup,na.rm=T), se=sd/sqrt(n()), psup=mean(psup), psup.lo=psup-sd, psup.hi=psup+sd, 
+                                                                             gene=first(category), orf=first(category))
+
+  ps_dt_temp$temp = temps[ps_dt_temp$experiment]
+  ps_dt_time$time = times[ps_dt_time$experiment]
   
-  ps_dt_temp$temp = temps[ps_dt_temp$experiment ]
+  #list(time=ps_dt_time, temp=ps_dt_temp)
+  return(plotgenes(ps_dt_time, ps_dt_temp, tempexps, temps, tempbreaks, timeexps, times, errorbars, linewidth, idType))
+}
+
+plotgenes = function(ps_dt_time, ps_dt_temp,
+                     tempexps=c("30C.rep2","37C.8min","42C.8min","46C.8min"),
+                     temps=c(30,37,42,46), tempbreaks=temps,
+                     timeexps=c("30C.rep1","46C.2min","46C.4min","46C.8min"),
+                     times=c(0,2,4,8), 
+                     errorbars=FALSE, linewidth=0.8,
+                     idType=c("gene","orf")) {
   plot_temp = ggplot(data=ps_dt_temp,
                      aes(x=.data[["temp"]],y=.data[["psup"]],ymin=.data[["psup.lo"]],ymax=.data[["psup.hi"]],
-                         colour=category,label=category)) +
+                         colour=.data[[idType]],label=.data[[idType]])) +
     geom_line(linewidth=linewidth) + 
     geom_text_repel(size=4,data=ps_dt_temp |> filter(temp==max(temps)),
                     aes(x=max(temps)+0.5,y=psup), xlim=c(46,52)) +
@@ -154,11 +138,9 @@ plotgenes_categories = function(gene_cat_list,data=ps_dt,
                        breaks=tempbreaks,labels=tempbreaks, expand=c(0,0)) +
     scale_y_pSup("Proportion\nin\nsupernatant")
   
-  ps_dt_time$time = times[ps_dt_time$experiment ]
-  
   plot_time = ggplot(data=ps_dt_time,
                      aes(x=.data[["time"]],y=.data[["psup"]],ymin=.data[["psup.lo"]],ymax=.data[["psup.hi"]],
-                         colour=category,label=category)) +
+                         colour=.data[[idType]],label=.data[[idType]])) +
     geom_line(size=linewidth) +
     geom_text_repel(size=4,data=subset(ps_dt_time,time==max(times)),
                     aes(x=max(times)+0.1,y=psup), xlim=c(8,12)) +
@@ -177,12 +159,12 @@ plot_from_input = function(s, errorbars, idType) {
   if (grepl('=',s,fixed=TRUE)) { 
     # This is a named list
     ids = splitstring(s)
-    print(paste("named categories:",ids))
+    #print(paste("named categories:",ids))
     fun = plotgenes_categories
   } else {
     ids = toupper(strsplit(gsub(" ", "", s, fixed = TRUE),",")[[1]])
-    print(paste("flat list:",ids))
-    fun = plotmygenes
+    #print(paste("flat list:",ids))
+    fun = plotgenes_flat
   }
   fun(ids, errorbars=errorbars, idType=idType)
 }
