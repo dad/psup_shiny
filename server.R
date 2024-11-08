@@ -19,9 +19,9 @@ ps_dt <- read_tsv("scer_aggregation_psup_long.txt", comment='#') #,stringsAsFact
 theme_set(theme_minimal(base_size=14) %+replace% theme(legend.position="none"))
 
 splitstring = function(s) {
-  # Take string formatted as "ribosomal=(RPS1,RPS2); glycolytic=(GLK1,TDH3)" and split into a
+  # Take string formatted as "ribosomal=RPS1,RPS2; glycolytic=GLK1,TDH3" and split into a
   # list(ribosomal=('RPS1','RPS2'), glycolytic=c('GLK1','TDH3'))
-  #if (T) {  s = "ribosomal=(rps1,RPS2); glycolytic=(GLK1,TDH3); agg=(ded1,pab1); pma1" }
+  #if (T) {  s = "ribosomal=RPL32,RPL4A,RPL19A,RPS9B,RPL21A,RPS29B,RPL31A,RPL35A,RPL4B; glycolytic=GLK1,TDH3; agg=ded1,pab1; pma1; pgk1" }
   classes = str_split(s,';')[[1]]
   
   x = sapply(classes, function(ss) {
@@ -35,7 +35,8 @@ splitstring = function(s) {
       label=toupper(trimname)
       genenames = trimname
     }
-    genes=toupper(str_split(gsub("\\((.*)\\)", "\\1",genenames),',')[[1]])
+    #genes=toupper(str_split(gsub("\\((.*)\\)", "\\1",genenames),',')[[1]])
+    genes=toupper(gsub("[[:space:]]", "", str_split(genenames,',')[[1]]))
     g = list(g=genes)
     names(g)[1] = label
     #print(g)

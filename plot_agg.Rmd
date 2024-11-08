@@ -182,7 +182,7 @@ plotgenes_categories = function(gene_cat_list,data=ps_dt,
 splitstring = function(s) {
   # Take string formatted as "ribosomal=RPS1,RPS2; glycolytic=GLK1,TDH3" and split into a
   # list(ribosomal=('RPS1','RPS2'), glycolytic=c('GLK1','TDH3'))
-  #if (T) {  s = "ribosomal=(RPL32,RPL4A,RPL19A,RPS9B,RPL21A,RPS29B,RPL31A,RPL35A,RPL4B); glycolytic=(GLK1,TDH3); agg=(ded1,pab1); pma1; pgk1" }
+  #if (T) {  s = "ribosomal=RPL32,RPL4A,RPL19A,RPS9B,RPL21A,RPS29B,RPL31A,RPL35A,RPL4B; glycolytic=GLK1,TDH3; agg=ded1,pab1; membrane = por1, pma1; pgk1" }
   classes = str_split(s,';')[[1]]
   
   x = sapply(classes, function(ss) {
@@ -196,7 +196,8 @@ splitstring = function(s) {
       label=toupper(trimname)
       genenames = trimname
     }
-    genes=toupper(str_split(gsub("\\((.*)\\)", "\\1",genenames),',')[[1]])
+    #genes=toupper(str_split(gsub("\\((.*)\\)", "\\1",genenames),',')[[1]])
+    genes=toupper(gsub("[[:space:]]", "", str_split(genenames,',')[[1]]))
     g = list(g=genes)
     names(g)[1] = label
     #print(g)
@@ -221,9 +222,9 @@ plot_from_input = function(s, errorbars, idType) {
   fun(ids, errorbars=errorbars, idType=idType)
 }
 
-splitstring('ribosomal=(rps1,RPS2); glycolytic=(GLK1,TDH3); pma1')
+splitstring('ribosomal=rps1,RPS2; glycolytic=GLK1,TDH3; pma1; membrane=pma1, por1')
 plot_from_input("PAB1,PGK1,PMA1", FALSE, "gene")
-plot_from_input("ribosomal=(rps1,RPS2); glycolytic=(GLK1,TDH3); pma1", FALSE, "gene")
+plot_from_input("ribosomal=rps1,RPS2; glycolytic=GLK1,TDH3; pma1", FALSE, "gene")
 ribgenes = unique(unlist(ps_dt |> filter(substring(gene, 1,3) %in% c('RPL','RPS')) |> select(gene)))
 #rib2genes = setdiff(ribgenes, c('RPL23B','RPS14B','RPL38','RPL39','RPS27'))
 #agggenes = c('PAB1','DED1','XRN1','DCP1','NUG1','OLA1')

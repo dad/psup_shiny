@@ -1,4 +1,6 @@
 library(shiny)
+# install.packages("devtools")
+# devtools::install_github("aoles/shinyURL")
 library(shinyURL)
 
 # Define UI for application that draws a histogram
@@ -10,9 +12,9 @@ shinyUI(fluidPage(
     # Sidebar with a slider input for the number of bins
     sidebarLayout(
         sidebarPanel(
-            textInput("ids",
+            textAreaInput("ids",
                         "Enter gene identifiers separated by commas:",
-                        value = "PGK1,PAB1,PMA1"),
+                        value = "PGK1,PAB1,PMA1", rows=4),
             selectInput("idType", "identify by", c("gene","orf"), selected="gene"),
             checkboxInput("interval", "Show 95% intervals", FALSE),
             selectInput("plotType", "plot against", c("time","temperature"), selected="time")
@@ -27,7 +29,7 @@ shinyUI(fluidPage(
     # Subtitle with paper reference
     mainPanel(
         p("Data from: 
-          Reversible, Specific, Active Aggregates of Endogenous Proteins Assemble upon Heat Stress,
+          Reversible, specific, active aggregates of endogenous proteins assemble upon heat stress,
           Wallace et al., Cell 162 (6), 2015, http://drummondlab.org/endogenous-aggregates")
     ),
     
