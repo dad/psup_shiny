@@ -31,17 +31,25 @@ theme_set(theme_minimal(base_size=14) %+replace% theme(legend.position="none"))
 ```{r funcs}
 
 splitstring = function(s) {
-  # Take string formatted as "ribosomal=(RPS1,RPS2); glycolytic=(GLK1,TDH3)" and split into a
+  # Take string formatted as "ribosomal=RPS1, RPS2; glycolytic=GLK1,TDH3" and split into a
   # list(ribosomal=('RPS1','RPS2'), glycolytic=c('GLK1','TDH3'))
-  if (T) {  s = "ribosomal=(RPS1,RPS2); glycolytic=(GLK1,TDH3)" }
+  # e.g. ribosomal=RPL32,RPL4A,RPL19A,RPS9B,RPL21A,RPS29B,RPL31A,RPL35A,RPL4B; glycolytic=GLK1,TDH3; agg=ded1, pab1; pma1; pgk1
   classes = str_split(s,';')[[1]]
+  
   x = sapply(classes, function(ss) {
     res = str_split(ss,'=')[[1]]
-    label=gsub("[[:space:]]",'',res[1])
-    genes=str_split(gsub("\\((.*)\\)", "\\1",res[2]),',')[[1]]
+    if (length(res)==2){
+      label=gsub("[[:space:]]",'',res[1])
+      genenames = res[2]
+    } else {
+      # No label; use gene as label
+      trimname = gsub("[[:space:]]",'',res[1])
+      label=toupper(trimname)
+      genenames = trimname
+    }
+    genes=toupper(gsub("[[:space:]]", "", str_split(genenames,',')[[1]]))
     g = list(g=genes)
     names(g)[1] = label
-    print(g)
     g
   }, USE.NAMES = F)
   x
@@ -89,7 +97,7 @@ plotmygenes = function(mygenes,data=ps_dt,
                         aes(x=.data[["temp"]],y=.data[["psup"]],ymin=.data[["psup.lo"]],ymax=.data[["psup.hi"]],
                                    colour=idType,label=idType)) +
         geom_line(linewidth=linewidth) + 
-        geom_text_repel(size=4,data=ps_dt_temp |> filter(temp==max(temp)),
+        geom_text_repel(size=4,data=ps_dt_temp |> filter(temp==max(temps)),
                   aes(x=max(temp)+0.5,y=psup), xlim=c(46,52)) +
         coord_cartesian(xlim=c(30,52)) +
 #        scale_x_continuous(expression("Temperature "*(degree*C)*" of 8 min. treatment"),
@@ -103,7 +111,7 @@ plotmygenes = function(mygenes,data=ps_dt,
                         aes_string(x="time",y="psup",ymin="psup.lo",ymax="psup.hi",
                                    colour=idType,label=idType)) +
         geom_line(size=linewidth) +
-        geom_text_repel(size=4,data=subset(ps_dt_time,time==max(time)),
+        geom_text_repel(size=4,data=subset(ps_dt_time,time==max(times)),
                   aes(x=max(time)+0.1,y=psup), xlim=c(8,12)) +
         scale_y_pSup("Proportion\nin\nsupernatant") + scale_time()
     
@@ -182,7 +190,7 @@ plotgenes_categories = function(gene_cat_list,data=ps_dt,
 splitstring = function(s) {
   # Take string formatted as "ribosomal=RPS1,RPS2; glycolytic=GLK1,TDH3" and split into a
   # list(ribosomal=('RPS1','RPS2'), glycolytic=c('GLK1','TDH3'))
-  #if (T) {  s = "ribosomal=RPL32,RPL4A,RPL19A,RPS9B,RPL21A,RPS29B,RPL31A,RPL35A,RPL4B; glycolytic=GLK1,TDH3; agg=ded1,pab1; membrane = por1, pma1; pgk1" }
+  #if (T) {  s = "ribosomal=RPL32,RPL4A,RPL19A,RPS9B,RPL21A,RPS29B,RPL31A,RPL35A,RPL4B; glycolytic=GLK1,TDH3; agg=ded1,pab1; pma1; pgk1" }
   classes = str_split(s,';')[[1]]
   
   x = sapply(classes, function(ss) {
@@ -196,8 +204,7 @@ splitstring = function(s) {
       label=toupper(trimname)
       genenames = trimname
     }
-    #genes=toupper(str_split(gsub("\\((.*)\\)", "\\1",genenames),',')[[1]])
-    genes=toupper(gsub("[[:space:]]", "", str_split(genenames,',')[[1]]))
+    genes=toupper(str_split(gsub("\\((.*)\\)", "\\1",genenames),',')[[1]])
     g = list(g=genes)
     names(g)[1] = label
     #print(g)
@@ -222,9 +229,10 @@ plot_from_input = function(s, errorbars, idType) {
   fun(ids, errorbars=errorbars, idType=idType)
 }
 
-splitstring('ribosomal=rps1,RPS2; glycolytic=GLK1,TDH3; pma1; membrane=pma1, por1')
+the_string = "ribosomal=RPL32,RPL4A,RPL19A,RPS9B,RPL21A,RPS29B,RPL31A,RPL35A,RPL4B; glycolytic=GLK1,TDH3; agg=ded1, pab1; pma1; pgk1"
+splitstring(the_string)
 plot_from_input("PAB1,PGK1,PMA1", FALSE, "gene")
-plot_from_input("ribosomal=rps1,RPS2; glycolytic=GLK1,TDH3; pma1", FALSE, "gene")
+plot_from_input(the_string, FALSE, "gene")
 ribgenes = unique(unlist(ps_dt |> filter(substring(gene, 1,3) %in% c('RPL','RPS')) |> select(gene)))
 #rib2genes = setdiff(ribgenes, c('RPL23B','RPS14B','RPL38','RPL39','RPS27'))
 #agggenes = c('PAB1','DED1','XRN1','DCP1','NUG1','OLA1')
