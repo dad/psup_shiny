@@ -129,22 +129,24 @@ plotgenes = function(ps_dt_time, ps_dt_temp,
   plot_temp = ggplot(data=ps_dt_temp,
                      aes(x=.data[["temp"]],y=.data[["psup"]],ymin=.data[["psup.lo"]],ymax=.data[["psup.hi"]],
                          colour=.data[[idType]],label=.data[[idType]])) +
-    geom_line(linewidth=linewidth) + 
+    geom_line(linewidth=linewidth) +
     geom_text_repel(size=4,data=ps_dt_temp |> filter(temp==max(temps)),
                     aes(x=max(temps)+0.5,y=psup), xlim=c(46,52)) +
     coord_cartesian(xlim=c(30,52)) +
     #        scale_x_continuous(expression("Temperature "*(degree*C)*" of 8 min. treatment"),
     scale_x_continuous("Temperature (\u00b0C) of 8 min. treatment",
                        breaks=tempbreaks,labels=tempbreaks, expand=c(0,0)) +
-    scale_y_pSup("Proportion\nin\nsupernatant")
-  
+    scale_y_pSup("Proportion\nin\nsupernatant") +
+    scale_colour_brewer(palette = "Dark2")
+
   plot_time = ggplot(data=ps_dt_time,
                      aes(x=.data[["time"]],y=.data[["psup"]],ymin=.data[["psup.lo"]],ymax=.data[["psup.hi"]],
                          colour=.data[[idType]],label=.data[[idType]])) +
     geom_line(size=linewidth) +
     geom_text_repel(size=4,data=subset(ps_dt_time,time==max(times)),
                     aes(x=max(times)+0.1,y=psup), xlim=c(8,12)) +
-    scale_y_pSup("Proportion\nin\nsupernatant") + scale_time()
+    scale_y_pSup("Proportion\nin\nsupernatant") + scale_time() +
+    scale_colour_brewer(palette = "Dark2")
   
   if (errorbars) {
     plot_temp = plot_temp + geom_pointrange()
@@ -181,9 +183,14 @@ shinyServer(function(input, output,session) {
     #     when inputs change
     #  2) Its output type is a plot
     
-    output$plot <- renderPlot({
-        # time plot of 46C psup
-        
+    # Dynamic plot sizing
+    output$plot_ui <- renderUI({
+        w <- paste0(input$plot_width, "px")
+        h <- paste0(input$plot_height, "px")
+        plotOutput("plot", width = w, height = h)
+    })
+
+    current_plot <- reactive({
         plots = plot_from_input(input$ids, errorbars=input$interval,idType=input$idType)
         if (input$plotType == "time") {
             return(plots$plot_time)
@@ -191,6 +198,32 @@ shinyServer(function(input, output,session) {
             return(plots$plot_temp)
         }
     })
+
+    output$plot <- renderPlot({
+        current_plot()
+    })
+
+    # Figure download
+    output$dl_plot <- downloadHandler(
+        filename = function() {
+            paste0("psup_", Sys.Date(), ".", input$dl_format)
+        },
+        content = function(file) {
+            w_in <- input$plot_width / 150
+            h_in <- input$plot_height / 150
+            p <- current_plot()
+            if (input$dl_format == "png") {
+                ggsave(file, plot = p, device = "png",
+                       width = w_in, height = h_in, dpi = 300)
+            } else if (input$dl_format == "svg") {
+                ggsave(file, plot = p, device = "svg",
+                       width = w_in, height = h_in)
+            } else if (input$dl_format == "pdf") {
+                ggsave(file, plot = p, device = "pdf",
+                       width = w_in, height = h_in)
+            }
+        }
+    )
     
     # Example strings
     
