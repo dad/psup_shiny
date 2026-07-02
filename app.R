@@ -56,6 +56,15 @@ scale_y_pSup <- function() {
   )
 }
 
+# Colorblind-friendly ColorBrewer Dark2 palette. Unlike scale_colour_brewer(),
+# this recycles the 8 Dark2 colors when there are more than 8 series so that
+# every series is still drawn (brewer drops series past the 8th to NA).
+scale_colour_dark2 <- function(...) {
+  dark2 <- scales::brewer_pal(palette = "Dark2")(8)
+  discrete_scale(aesthetics = "colour",
+                 palette = function(n) rep(dark2, length.out = n), ...)
+}
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Wallace-specific code
 # ══════════════════════════════════════════════════════════════════════════════
@@ -131,7 +140,7 @@ plotgenes_wallace <- function(ps_dt_time, ps_dt_temp,
     scale_x_continuous("Temperature (\u00b0C) of 8 min. treatment",
                        breaks = tempbreaks, labels = tempbreaks, expand = c(0, 0)) +
     scale_y_pSup() +
-    scale_colour_brewer(palette = "Dark2") +
+    scale_colour_dark2() +
     theme(legend.position = "none")
 
   plot_time <- ggplot(data = ps_dt_time,
@@ -143,7 +152,7 @@ plotgenes_wallace <- function(ps_dt_time, ps_dt_temp,
       data = subset(ps_dt_time, time == max(times)),
       aes(x = max(times) + 0.1, y = psup), xlim = c(8, 12)) +
     scale_y_pSup() + scale_time() +
-    scale_colour_brewer(palette = "Dark2") +
+    scale_colour_dark2() +
     theme(legend.position = "none")
 
   if (errorbars) {
@@ -235,6 +244,7 @@ wallace_ui <- function() {
                     value = "PGK1;PAB1;PMA1", rows = 4),
       helpText("Examples (click to update):"),
       actionLink("flat_examples", "Individual proteins"),
+      br(),
       actionLink("category_examples", "Protein categories"),
       helpText(" "),
       selectInput("idType", "Identify by:", c("gene", "orf"), selected = "gene"),
@@ -263,7 +273,7 @@ dia_ui <- function() {
   sidebarLayout(
     sidebarPanel(
       textAreaInput("ids", "Gene identifiers separated by semicolons:",
-                    value = "PGK1;PAB1;DED1", rows = 4),
+                    value = "glycolytic=PGK1,FBA1,TDH3;superaggregator=DED1,NUG1,OLA1;ribosomal=RPL4A,RPL19A,RPS9B", rows = 4),
       helpText("Examples (click to update):"),
       actionLink("flat_examples", "Individual proteins"),
       actionLink("category_examples", "Protein categories"),
@@ -600,7 +610,7 @@ server <- function(input, output, session) {
     }
 
     p +
-      scale_colour_brewer(palette = "Dark2") +
+      scale_colour_dark2() +
       scale_shape_manual(values = dia_species_shapes,
                          labels = dia_species_labels_md,
                          name = "Species") +
