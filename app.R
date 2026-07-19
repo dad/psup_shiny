@@ -30,7 +30,9 @@ splitstring <- function(s) {
   sapply(classes, function(ss) {
     res <- str_split(ss, "=")[[1]]
     if (length(res) == 2) {
-      label <- gsub("[[:space:]]", "", res[1])
+      # Keep spaces inside an explicit label ("glycolytic enzymes"), trimming
+      # only the edges. Gene names below still have all whitespace removed.
+      label <- trimws(res[1])
       genenames <- res[2]
     } else {
       trimname <- gsub("[[:space:]]", "", res[1])
@@ -64,17 +66,39 @@ scale_colour_dark2 <- function(...) {
                  palette = function(n) rep(dark2, length.out = n), ...)
 }
 
+# ── Shared plot styling ───────────────────────────────────────────────────────
+# The single place these two knobs are defined. Both apps read them at draw
+# time, so editing a default here — or setting the option for a session, e.g.
+# options(psup.dodge_frac = 0.04) — propagates everywhere, including preview.R.
+
+# Opacity of the faint individual-gene traces drawn behind each group mean.
+psup_trace_alpha <- function() getOption("psup.trace_alpha", 0.15)
+
+# Sideways offset applied to error bars so that overlapping bars stay
+# distinguishable, as a fraction of the x extent. A dodge rather than a random
+# jitter, so figures reproduce between renders.
+psup_dodge_frac <- function() getOption("psup.dodge_frac", 0.02)
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Wallace-specific code
 # ══════════════════════════════════════════════════════════════════════════════
 
 scale_time <- function(name = expression("Minutes at " * 46 * degree ~ C * ""),
-                       text = TRUE, min_x = 0) {
+                       text = TRUE, min_x = 0, max_x = NULL) {
   # limits here filter data (unlike coord_cartesian), so min_x must leave room
   # for any x dodge applied to the error bars or those points get dropped.
-  mylim <- if (text) c(min_x, 9.9) else c(min_x, 8)
-  scale_x_continuous(name, expand = c(0.01, 0.1), limits = mylim,
+  if (is.null(max_x)) max_x <- if (text) 9.9 else 8
+  scale_x_continuous(name, expand = c(0.01, 0.1), limits = c(min_x, max_x),
                      breaks = c(0, 2, 4, 8))
+}
+
+# Room to reserve to the right of the last timepoint for the end-of-line labels,
+# in x units. Long category names ("glycolytic enzymes") would otherwise be
+# clipped at the panel edge. 9.9 is kept as a floor so short labels are
+# unaffected. Approximate: label width also depends on the plot's pixel width.
+wallace_label_room <- function(labels, times) {
+  widest <- suppressWarnings(max(nchar(as.character(labels)), 0))
+  max(9.9, max(times) + 0.03 * diff(range(times)) + 0.15 * widest)
 }
 
 plotgenes_categories <- function(gene_cat_list, data = wallace_dt,
@@ -154,7 +178,7 @@ plotgenes_wallace <- function(ps_dt_time, ps_dt_temp,
   # Offset each category's error bars slightly along x so that overlapping bars
   # stay readable. A dodge (not a random jitter) keeps figures reproducible.
   # Width is a fraction of the x span, so it scales with the axis.
-  dodge_frac <- getOption("psup.dodge_frac", 0.04)
+  dodge_frac <- psup_dodge_frac()
   dodge_temp <- position_dodge(width = diff(range(temps)) * dodge_frac)
   dodge_time <- position_dodge(width = diff(range(times)) * dodge_frac)
 
@@ -175,7 +199,7 @@ plotgenes_wallace <- function(ps_dt_time, ps_dt_temp,
       data = traces_temp,
       aes(x = temp, y = psup, colour = category,
           group = interaction(category, orf)),
-      alpha = getOption("psup.trace_alpha", 0.15), linewidth = linewidth,
+      alpha = psup_trace_alpha(), linewidth = linewidth,
       inherit.aes = FALSE)
   }
 
@@ -188,9 +212,12 @@ plotgenes_wallace <- function(ps_dt_time, ps_dt_temp,
   }
 
   plot_temp <- plot_temp +
-    geom_text_repel(size = 4,
+    # Fixed labels, anchored at each series' final value. geom_text_repel would
+    # nudge them off their own line (and silently drop them when crowded), so
+    # they shifted whenever the plot was resized or redrawn.
+    geom_text(size = 4, hjust = 0,
       data = ps_dt_temp |> filter(temp == max(temps)),
-      aes(x = max(temps) + 0.5, y = psup), xlim = c(46, 52)) +
+      aes(x = max(temps) + 0.03 * diff(range(temps)), y = psup)) +
     # Start just below the lowest temperature: the x scale has no expansion, so
     # data sitting exactly on the panel edge would be clipped in half.
     coord_cartesian(xlim = c(min(temps) - 1, 52)) +
@@ -210,7 +237,7 @@ plotgenes_wallace <- function(ps_dt_time, ps_dt_temp,
       data = traces_time,
       aes(x = time, y = psup, colour = category,
           group = interaction(category, orf)),
-      alpha = getOption("psup.trace_alpha", 0.15), linewidth = linewidth,
+      alpha = psup_trace_alpha(), linewidth = linewidth,
       inherit.aes = FALSE)
   }
 
@@ -222,15 +249,18 @@ plotgenes_wallace <- function(ps_dt_time, ps_dt_temp,
                       position = dodge_time)
   }
 
+  time_max_x <- wallace_label_room(ps_dt_time[[idType]], times)
+
   plot_time <- plot_time +
-    geom_text_repel(size = 4,
+    geom_text(size = 4, hjust = 0,
       data = subset(ps_dt_time, time == max(times)),
-      aes(x = max(times) + 0.1, y = psup), xlim = c(8, 12)) +
+      aes(x = max(times) + 0.03 * diff(range(times)), y = psup)) +
     scale_y_pSup() +
     # Only widen the lower limit when dodged error bars need the room, so the
     # default view still starts flush at time 0.
     scale_time(min_x = if (errorbars)
-                 min(times) - diff(range(times)) * dodge_frac else min(times)) +
+                 min(times) - diff(range(times)) * dodge_frac else min(times),
+               max_x = time_max_x) +
     scale_colour_dark2() +
     theme(legend.position = "none")
 
@@ -310,6 +340,176 @@ dia_add_categories <- function(dat, cats) {
     # the existing categories' colours unchanged (see plotgenes_categories).
     mutate(category = factor(category, levels = names(cats))) %>%
     select(-query_match)
+}
+
+# ── Shared DIA plot pipeline ──────────────────────────────────────────────────
+# Plain functions, deliberately free of Shiny reactives, so the app's server and
+# command-line callers (preview.R) drive exactly the same code. All DIA plotting
+# logic belongs here rather than inside server().
+
+dia_is_category_list <- function(gene_list) {
+  length(gene_list) > 1 || any(vapply(gene_list, length, integer(1)) > 1)
+}
+
+# Rows for the selected species / base temperatures and the query genes.
+dia_filter_data <- function(sel, genes) {
+  dia_dt %>%
+    inner_join(sel, by = c("species", "start_temp")) %>%
+    dia_match_genes(genes) %>%
+    dia_get_display_label()
+}
+
+# Narrow to the rows a temperature or time plot draws, then attach categories.
+dia_plot_subset <- function(dat, gene_list, plot_type, shock_temp = NULL) {
+  dat <- if (plot_type == "temperature") {
+    dat %>% filter(timepoint == 8 | (start_temp == end_temp & timepoint == 0))
+  } else {
+    st <- as.numeric(shock_temp)
+    dat %>% filter(end_temp == st | (end_temp == start_temp & timepoint == 0))
+  }
+  if (nrow(dat) == 0) return(dat)
+  if (dia_is_category_list(gene_list)) dat <- dia_add_categories(dat, gene_list)
+  dat
+}
+
+# Axis variable, label, limits and breaks for each plot type.
+dia_plot_axis <- function(dat, plot_type, shock_temp = NULL,
+                          x_min = NULL, x_max = NULL) {
+  if (plot_type == "temperature") {
+    if (is.null(x_min)) x_min <- 23
+    if (is.null(x_max)) x_max <- 50
+    list(x_var = "end_temp", x_min = x_min, x_max = x_max,
+         x_label = "Temperature (°C) after 8 min.",
+         x_breaks = dia_temp_axis_breaks(x_min, x_max))
+  } else {
+    if (is.null(x_min)) x_min <- 0
+    if (is.null(x_max)) x_max <- 20
+    list(x_var = "timepoint", x_min = x_min, x_max = x_max,
+         x_label = paste0("Minutes at ", as.numeric(shock_temp), "°C"),
+         x_breaks = sort(unique(c(
+           seq(x_min, x_max, by = 4),
+           unique(dat$timepoint[dat$timepoint >= x_min & dat$timepoint <= x_max])))))
+  }
+}
+
+# Mean per series, plus optional raw biorep points and per-gene traces.
+dia_summarize_plot_data <- function(dat, x_var, gene_list,
+                                    show_bioreps = FALSE, show_traces = FALSE) {
+  is_category <- dia_is_category_list(gene_list)
+  label_col <- if (is_category && "category" %in% names(dat)) "category" else "display_label"
+
+  mean_dat <- dat %>%
+    group_by(.data[[label_col]], species, .data[[x_var]]) %>%
+    summarise(sd = sd(pSup, na.rm = TRUE),
+              se = sd / sqrt(sum(!is.na(pSup))),
+              pSup = mean(pSup, na.rm = TRUE),
+              .groups = "drop") %>%
+    mutate(display_label = .data[[label_col]])
+
+  biorep_dat <- if (isTRUE(show_bioreps)) {
+    dat %>% mutate(display_label = .data[[label_col]])
+  } else NULL
+
+  # Traces only for categories holding more than one gene; a single-gene
+  # category's trace would just overprint its own mean line.
+  trace_dat <- if (isTRUE(show_traces) && is_category) {
+    multi <- names(gene_list)[vapply(gene_list, length, integer(1)) > 1]
+    if (length(multi) > 0) {
+      dat %>%
+        filter(category %in% multi) %>%
+        group_by(category, species, orf, .data[[x_var]]) %>%
+        summarise(pSup = mean(pSup, na.rm = TRUE), .groups = "drop") %>%
+        mutate(display_label = category)
+    } else NULL
+  } else NULL
+
+  list(mean = mean_dat, bioreps = biorep_dat, traces = trace_dat)
+}
+
+# Assemble the ggplot from an already-subset data frame.
+dia_assemble_plot <- function(dat, axis, gene_list, show_traces = FALSE,
+                              show_bioreps = FALSE, show_errorbars = FALSE,
+                              error_type = "se") {
+  x_var <- axis$x_var
+  plot_data <- dia_summarize_plot_data(dat, x_var, gene_list,
+                                       show_bioreps = show_bioreps,
+                                       show_traces = show_traces)
+  mean_dat   <- plot_data$mean
+  biorep_dat <- plot_data$bioreps
+  trace_dat  <- plot_data$traces
+
+  p <- ggplot(mean_dat, aes(
+    x = .data[[x_var]], y = pSup,
+    colour = display_label, shape = species,
+    group = interaction(display_label, species)
+  ))
+
+  # Faint individual gene traces, drawn under the group mean line.
+  if (!is.null(trace_dat) && nrow(trace_dat) > 0) {
+    p <- p + geom_line(
+      data = trace_dat,
+      aes(x = .data[[x_var]], y = pSup, colour = display_label,
+          group = interaction(display_label, species, orf)),
+      alpha = psup_trace_alpha(), linewidth = 0.8,
+      inherit.aes = FALSE)
+  }
+
+  # With error bars shown, nudge each series' mean point and bar sideways
+  # together so overlapping bars stay readable; the line stays at its true x.
+  dodge <- position_dodge(width = (axis$x_max - axis$x_min) * psup_dodge_frac())
+  point_pos <- if (isTRUE(show_errorbars)) dodge else "identity"
+
+  p <- p + geom_line(linewidth = 0.8) +
+    geom_point(size = 3, position = point_pos)
+
+  if (isTRUE(show_errorbars)) {
+    err_dat <- mean_dat %>% mutate(
+      .err = .data[[error_type]],
+      pSup_lo = pmax(0, pSup - .err), pSup_hi = pmin(1, pSup + .err))
+    p <- p + geom_errorbar(
+      data = err_dat,
+      aes(ymin = pSup_lo, ymax = pSup_hi),
+      width = (axis$x_max - axis$x_min) * 0.015, linewidth = 0.4,
+      position = dodge)
+  }
+
+  if (!is.null(biorep_dat)) {
+    p <- p + geom_point(
+      data = biorep_dat,
+      aes(x = .data[[x_var]], y = pSup,
+          colour = display_label, shape = species),
+      size = 2, alpha = 0.4, inherit.aes = FALSE)
+  }
+
+  p +
+    scale_colour_dark2() +
+    scale_shape_manual(values = dia_species_shapes,
+                       labels = dia_species_labels_md,
+                       name = "Species") +
+    labs(colour = NULL) +
+    xlab(axis$x_label) +
+    scale_y_pSup() +
+    scale_x_continuous(breaks = axis$x_breaks, expand = expansion(mult = 0.02)) +
+    coord_cartesian(xlim = c(axis$x_min, axis$x_max)) +
+    theme(legend.position = "right", legend.text = element_markdown())
+}
+
+# Gene list + species/base-temp selection -> ggplot. The single entry point used
+# by both the Shiny server and preview.R. Returns NULL when nothing matches.
+dia_plot <- function(gene_list, sel, plot_type = c("temperature", "time"),
+                     shock_temp = NULL, x_min = NULL, x_max = NULL,
+                     show_traces = FALSE, show_bioreps = FALSE,
+                     show_errorbars = FALSE, error_type = "se") {
+  plot_type <- match.arg(plot_type)
+  if (nrow(sel) == 0) return(NULL)
+  dat <- dia_filter_data(sel, unique(unlist(gene_list)))
+  if (nrow(dat) == 0) return(NULL)
+  dat <- dia_plot_subset(dat, gene_list, plot_type, shock_temp)
+  if (nrow(dat) == 0) return(NULL)
+  axis <- dia_plot_axis(dat, plot_type, shock_temp, x_min, x_max)
+  dia_assemble_plot(dat, axis, gene_list, show_traces = show_traces,
+                    show_bioreps = show_bioreps,
+                    show_errorbars = show_errorbars, error_type = error_type)
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -506,8 +706,7 @@ server <- function(input, output, session) {
   # ── Shared: current plot reactive ────────────────────────────────────────
   current_plot <- reactive({
     if (dataset() == "dia") {
-      if (input$plotType == "temperature") dia_build_temp_plot()
-      else dia_build_time_plot()
+      dia_current_plot()
     } else {
       plots <- wallace_plot_from_input(input$ids,
         show_traces = isTRUE(input$show_traces),
@@ -615,162 +814,29 @@ server <- function(input, output, session) {
     unique(unlist(dia_gene_list()))
   })
 
-  dia_is_category_mode <- reactive({
-    cats <- dia_gene_list()
-    length(cats) > 1 || any(sapply(cats, length) > 1)
-  })
-
-  # ── Filtered data ───────────────────────────────────────────────────────
-  dia_filtered_data <- reactive({
+  # ── DIA plot ────────────────────────────────────────────────────────────
+  # All plotting logic lives in the shared dia_plot() pipeline near the top of
+  # this file, so the app and preview.R render through identical code.
+  dia_current_plot <- function() {
     sel <- dia_selected_species_temps()
     req(nrow(sel) > 0)
-    genes <- dia_all_genes()
-    dia_dt %>%
-      inner_join(sel, by = c("species", "start_temp")) %>%
-      dia_match_genes(genes) %>%
-      dia_get_display_label()
-  })
-
-  # ── Temperature plot data ───────────────────────────────────────────────
-  dia_temp_plot_data <- reactive({
-    dat <- dia_filtered_data()
-    req(nrow(dat) > 0)
-    dat <- dat %>%
-      filter(timepoint == 8 | (start_temp == end_temp & timepoint == 0))
-    if (nrow(dat) == 0) return(dat)
-    if (dia_is_category_mode()) dat <- dia_add_categories(dat, dia_gene_list())
-    dat
-  })
-
-  # ── Time plot data ──────────────────────────────────────────────────────
-  dia_time_plot_data <- reactive({
-    req(input$end_temp)
-    dat <- dia_filtered_data()
-    req(nrow(dat) > 0)
-    et <- as.numeric(input$end_temp)
-    dat <- dat %>%
-      filter((end_temp == et) | (end_temp == start_temp & timepoint == 0))
-    if (nrow(dat) == 0) return(dat)
-    if (dia_is_category_mode()) dat <- dia_add_categories(dat, dia_gene_list())
-    dat
-  })
-
-  # ── Summarize (mean + optional biorep points) ──────────────────────────
-  dia_summarize_plot_data <- function(dat, x_var) {
-    label_col <- if (dia_is_category_mode() && "category" %in% names(dat)) "category" else "display_label"
-    mean_dat <- dat %>%
-      group_by(.data[[label_col]], species, .data[[x_var]]) %>%
-      summarise(sd = sd(pSup, na.rm = TRUE),
-                se = sd / sqrt(sum(!is.na(pSup))),
-                pSup = mean(pSup, na.rm = TRUE),
-                .groups = "drop") %>%
-      mutate(display_label = .data[[label_col]])
-
-    # Raw bioreps as points (existing feature).
-    biorep_dat <- if (isTRUE(input$show_bioreps)) {
-      dat %>% mutate(display_label = .data[[label_col]])
-    } else NULL
-
-    # Individual gene traces (per gene, per species) drawn in the group colour.
-    # Only for categories that actually contain more than one gene; a
-    # single-gene category's trace would just overprint its own mean line.
-    trace_dat <- if (isTRUE(input$show_traces) && dia_is_category_mode()) {
-      cats <- dia_gene_list()
-      multi <- names(cats)[vapply(cats, length, integer(1)) > 1]
-      if (length(multi) > 0) {
-        dat %>%
-          filter(category %in% multi) %>%
-          group_by(category, species, orf, .data[[x_var]]) %>%
-          summarise(pSup = mean(pSup, na.rm = TRUE), .groups = "drop") %>%
-          mutate(display_label = category)
-      } else NULL
-    } else NULL
-
-    list(mean = mean_dat, bioreps = biorep_dat, traces = trace_dat)
-  }
-
-  # ── DIA plot builder ────────────────────────────────────────────────────
-  dia_build_plot <- function(dat, x_var, x_label, x_min, x_max, x_breaks) {
-    req(nrow(dat) > 0)
-    plot_data <- dia_summarize_plot_data(dat, x_var)
-    mean_dat <- plot_data$mean
-    biorep_dat <- plot_data$bioreps
-    trace_dat <- plot_data$traces
-
-    p <- ggplot(mean_dat, aes(
-      x = .data[[x_var]], y = pSup,
-      colour = display_label, shape = species,
-      group = interaction(display_label, species)
-    ))
-
-    # Faint individual gene traces, drawn under the group mean line.
-    if (!is.null(trace_dat) && nrow(trace_dat) > 0) {
-      p <- p + geom_line(
-        data = trace_dat,
-        aes(x = .data[[x_var]], y = pSup, colour = display_label,
-            group = interaction(display_label, species, orf)),
-        alpha = getOption("psup.trace_alpha", 0.15), linewidth = 0.8,
-        inherit.aes = FALSE)
-    }
-
-    p <- p + geom_line(linewidth = 0.8) + geom_point(size = 3)
-
-    if (isTRUE(input$show_errorbars)) {
-      etype <- if (is.null(input$error_type)) "se" else input$error_type
-      err_dat <- mean_dat %>% mutate(
-        .err = .data[[etype]],
-        pSup_lo = pmax(0, pSup - .err), pSup_hi = pmin(1, pSup + .err))
-      p <- p + geom_errorbar(
-        data = err_dat,
-        aes(ymin = pSup_lo, ymax = pSup_hi),
-        width = (x_max - x_min) * 0.015, linewidth = 0.4)
-    }
-
-    if (!is.null(biorep_dat)) {
-      p <- p + geom_point(
-        data = biorep_dat,
-        aes(x = .data[[x_var]], y = pSup,
-            colour = display_label, shape = species),
-        size = 2, alpha = 0.4, inherit.aes = FALSE)
-    }
-
-    p +
-      scale_colour_dark2() +
-      scale_shape_manual(values = dia_species_shapes,
-                         labels = dia_species_labels_md,
-                         name = "Species") +
-      labs(colour = NULL) +
-      xlab(x_label) +
-      scale_y_pSup() +
-      scale_x_continuous(breaks = x_breaks, expand = expansion(mult = 0.02)) +
-      coord_cartesian(xlim = c(x_min, x_max)) +
-      theme(legend.position = "right", legend.text = element_markdown())
-  }
-
-  dia_build_temp_plot <- function() {
-    dat <- dia_temp_plot_data()
-    req(nrow(dat) > 0)
-    t_min <- if (!is.null(input$temp_min)) input$temp_min else 23
-    t_max <- if (!is.null(input$temp_max)) input$temp_max else 50
-    dia_build_plot(dat, x_var = "end_temp",
-      x_label = "Temperature (\u00b0C) after 8 min.",
-      x_min = t_min, x_max = t_max,
-      x_breaks = dia_temp_axis_breaks(t_min, t_max))
-  }
-
-  dia_build_time_plot <- function() {
-    dat <- dia_time_plot_data()
-    req(nrow(dat) > 0)
-    et <- as.numeric(input$end_temp)
-    ti_min <- if (!is.null(input$time_min)) input$time_min else 0
-    ti_max <- if (!is.null(input$time_max)) input$time_max else 20
-    time_breaks <- sort(unique(c(
-      seq(ti_min, ti_max, by = 4),
-      unique(dat$timepoint[dat$timepoint >= ti_min & dat$timepoint <= ti_max])
-    )))
-    dia_build_plot(dat, x_var = "timepoint",
-      x_label = paste0("Minutes at ", et, "\u00b0C"),
-      x_min = ti_min, x_max = ti_max, x_breaks = time_breaks)
+    ptype <- input$plotType
+    if (ptype == "time") req(input$end_temp)
+    is_temp <- ptype == "temperature"
+    p <- dia_plot(
+      gene_list      = dia_gene_list(),
+      sel            = sel,
+      plot_type      = ptype,
+      shock_temp     = input$end_temp,
+      x_min          = if (is_temp) input$temp_min else input$time_min,
+      x_max          = if (is_temp) input$temp_max else input$time_max,
+      show_traces    = isTRUE(input$show_traces),
+      show_bioreps   = isTRUE(input$show_bioreps),
+      show_errorbars = isTRUE(input$show_errorbars),
+      error_type     = if (is.null(input$error_type)) "se" else input$error_type
+    )
+    req(!is.null(p))
+    p
   }
 
   # ── DIA data info panel ─────────────────────────────────────────────────

@@ -22,10 +22,16 @@
 #     preview_alpha_sweep("glycolytic=PGK1,FBA1,TDH3; ribosomal=RPL4A,RPL19A,RPS9B",
 #                         alphas = c(0.05, 0.1, 0.2, 0.3))
 #
+# This file holds no plotting logic of its own. It only translates convenient
+# arguments into calls to app.R's own functions — wallace_plot_from_input() and
+# the shared dia_plot() pipeline — which are the same entry points server()
+# uses. So a preview is the app's output, not a lookalike; verified by building
+# both and comparing the rendered layer data. Add plotting changes in app.R.
+#
 # `trace_alpha` sets options(psup.trace_alpha=) for the duration of the render,
-# which is the exact knob app.R reads — so what you see here is what the app
-# draws. Set it globally (options(psup.trace_alpha = 0.15)) to preview it live
-# in the running app too. Every call returns the ggplot invisibly, so you can
+# which is the exact knob app.R reads. Set it globally
+# (options(psup.trace_alpha = 0.15)) to preview it live in the running app too.
+# Every call returns the ggplot invisibly, so you can
 # `p <- preview_psup(...); ggsave("fig.pdf", p)`.
 
 # ── Main entry point ──────────────────────────────────────────────────────────
@@ -85,16 +91,12 @@ preview_alpha_sweep <- function(ids, alphas = c(0.05, 0.1, 0.2, 0.3), ...) {
 }
 
 # ── DIA preview ───────────────────────────────────────────────────────────────
-# The DIA plot is assembled inside app.R's Shiny server, so it can't be called
-# directly. This reproduces that pipeline using the app's own shared helpers
-# (dia_match_genes / dia_add_categories / scale_colour_dark2 / …) and the same
-# getOption("psup.trace_alpha") knob. Keep .dia_build() in sync with
-# dia_summarize_plot_data() + dia_build_plot() in app.R if those change.
+# No plotting logic here: this only turns preview_psup()'s convenience arguments
+# into the arguments dia_plot() expects. The rendering itself is app.R's shared
+# dia_plot() pipeline, the exact code the Shiny server calls.
 .preview_dia <- function(ids, plot, traces, bioreps, errorbars, error_type,
                          species, base_temps, end_temp, temp_range, time_range) {
-  gene_list   <- splitstring(ids)
-  genes       <- unique(unlist(gene_list))
-  is_category <- length(gene_list) > 1 || any(vapply(gene_list, length, integer(1)) > 1)
+  gene_list <- splitstring(ids)
 
   # Species / base-temperature selection (default: everything available).
   sel <- dia_species_base_temps
@@ -102,102 +104,20 @@ preview_alpha_sweep <- function(ids, alphas = c(0.05, 0.1, 0.2, 0.3), ...) {
   if (!is.null(base_temps)) sel <- dplyr::filter(sel, start_temp %in% .env$base_temps)
   if (nrow(sel) == 0) stop("No species/base-temperature combinations selected.")
 
-  dat <- dia_dt %>%
-    dplyr::inner_join(sel, by = c("species", "start_temp")) %>%
-    dia_match_genes(genes) %>%
-    dia_get_display_label()
-  if (nrow(dat) == 0) stop("No matching data for those genes / species / base temps.")
-
-  if (plot == "temperature") {
-    x_var   <- "end_temp"
-    dat     <- dplyr::filter(dat, timepoint == 8 | (start_temp == end_temp & timepoint == 0))
-    x_label <- "Temperature (°C) after 8 min."
-    x_min   <- temp_range[1]; x_max <- temp_range[2]
-    x_breaks <- dia_temp_axis_breaks(x_min, x_max)
-  } else {
-    x_var <- "timepoint"
-    et_shock <- if (!is.null(end_temp)) as.numeric(end_temp) else {
-      av <- dat %>% dplyr::filter(end_temp != start_temp) %>% dplyr::pull(end_temp)
-      if (length(av)) max(av) else 37
-    }
-    dat     <- dplyr::filter(dat, end_temp == et_shock | (end_temp == start_temp & timepoint == 0))
-    x_label <- paste0("Minutes at ", et_shock, "°C")
-    x_min   <- time_range[1]; x_max <- time_range[2]
-    x_breaks <- sort(unique(c(seq(x_min, x_max, by = 4),
-                  unique(dat$timepoint[dat$timepoint >= x_min & dat$timepoint <= x_max]))))
-  }
-  if (is_category) dat <- dia_add_categories(dat, gene_list)
-  if (nrow(dat) == 0) stop("No data left after filtering for that plot type / range.")
-
-  .dia_build(dat, x_var, x_label, x_min, x_max, x_breaks,
-             is_category, gene_list, traces, bioreps, errorbars, error_type)
-}
-
-.dia_build <- function(dat, x_var, x_label, x_min, x_max, x_breaks,
-                       is_category, gene_list, show_traces, show_bioreps,
-                       show_errorbars, error_type) {
-  label_col <- if (is_category && "category" %in% names(dat)) "category" else "display_label"
-
-  mean_dat <- dat %>%
-    dplyr::group_by(.data[[label_col]], species, .data[[x_var]]) %>%
-    dplyr::summarise(sd = sd(pSup, na.rm = TRUE),
-                     se = sd / sqrt(sum(!is.na(pSup))),
-                     pSup = mean(pSup, na.rm = TRUE), .groups = "drop") %>%
-    dplyr::mutate(display_label = .data[[label_col]])
-
-  trace_dat <- NULL
-  if (show_traces && is_category) {
-    multi <- names(gene_list)[vapply(gene_list, length, integer(1)) > 1]
-    if (length(multi) > 0) {
-      trace_dat <- dat %>%
-        dplyr::filter(category %in% multi) %>%
-        dplyr::group_by(category, species, orf, .data[[x_var]]) %>%
-        dplyr::summarise(pSup = mean(pSup, na.rm = TRUE), .groups = "drop") %>%
-        dplyr::mutate(display_label = category)
-    }
+  # Time plots need a heat-shock temperature; default to the hottest available
+  # for the selected genes, mirroring the app's end-temperature selector.
+  if (plot == "time" && is.null(end_temp)) {
+    avail <- dia_filter_data(sel, unique(unlist(gene_list)))
+    avail <- avail$end_temp[avail$end_temp != avail$start_temp]
+    end_temp <- if (length(avail)) max(avail) else 37
   }
 
-  p <- ggplot(mean_dat, aes(
-    x = .data[[x_var]], y = pSup,
-    colour = display_label, shape = species,
-    group = interaction(display_label, species)
-  ))
-
-  if (!is.null(trace_dat) && nrow(trace_dat) > 0) {
-    p <- p + geom_line(
-      data = trace_dat,
-      aes(x = .data[[x_var]], y = pSup, colour = display_label,
-          group = interaction(display_label, species, orf)),
-      alpha = getOption("psup.trace_alpha", 0.3), linewidth = 0.8,
-      inherit.aes = FALSE)
-  }
-
-  p <- p + geom_line(linewidth = 0.8) + geom_point(size = 3)
-
-  if (show_errorbars) {
-    err_dat <- mean_dat %>% dplyr::mutate(
-      .err = .data[[error_type]],
-      pSup_lo = pmax(0, pSup - .err), pSup_hi = pmin(1, pSup + .err))
-    p <- p + geom_errorbar(
-      data = err_dat, aes(ymin = pSup_lo, ymax = pSup_hi),
-      width = (x_max - x_min) * 0.015, linewidth = 0.4)
-  }
-
-  if (show_bioreps) {
-    p <- p + geom_point(
-      data = dat %>% dplyr::mutate(display_label = .data[[label_col]]),
-      aes(x = .data[[x_var]], y = pSup, colour = display_label, shape = species),
-      size = 2, alpha = 0.4, inherit.aes = FALSE)
-  }
-
-  p +
-    scale_colour_dark2() +
-    scale_shape_manual(values = dia_species_shapes,
-                       labels = dia_species_labels_md, name = "Species") +
-    labs(colour = NULL) +
-    xlab(x_label) +
-    scale_y_pSup() +
-    scale_x_continuous(breaks = x_breaks, expand = expansion(mult = 0.02)) +
-    coord_cartesian(xlim = c(x_min, x_max)) +
-    theme(legend.position = "right", legend.text = element_markdown())
+  rng <- if (plot == "temperature") temp_range else time_range
+  p <- dia_plot(gene_list = gene_list, sel = sel, plot_type = plot,
+                shock_temp = end_temp, x_min = rng[1], x_max = rng[2],
+                show_traces = traces, show_bioreps = bioreps,
+                show_errorbars = errorbars, error_type = error_type)
+  if (is.null(p))
+    stop("No data for those genes / species / base temps at that plot type.")
+  p
 }
