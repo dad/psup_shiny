@@ -79,6 +79,10 @@ psup_trace_alpha <- function() getOption("psup.trace_alpha", 0.15)
 # jitter, so figures reproduce between renders.
 psup_dodge_frac <- function() getOption("psup.dodge_frac", 0.02)
 
+# Minimum vertical gap between end-of-line labels, in pSup units. Approximate:
+# the space a label really needs also depends on the plot's pixel height.
+psup_label_gap <- function() getOption("psup.label_gap", 0.045)
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Wallace-specific code
 # ══════════════════════════════════════════════════════════════════════════════
@@ -99,6 +103,31 @@ scale_time <- function(name = expression("Minutes at " * 46 * degree ~ C * ""),
 wallace_label_room <- function(labels, times) {
   widest <- suppressWarnings(max(nchar(as.character(labels)), 0))
   max(9.9, max(times) + 0.03 * diff(range(times)) + 0.15 * widest)
+}
+
+# Nudge end-of-line labels apart along y so none overlap, moving each as little
+# as possible; labels already clear of their neighbours do not move at all.
+# This is a pure function of the input positions, so the layout is identical on
+# every re-render — unlike ggrepel, which runs a force simulation at draw time
+# (it drifts labels off their own line even when nothing collides, re-lays them
+# out whenever the plot is resized, and silently drops labels when crowded).
+spread_label_y <- function(y, min_gap = psup_label_gap(), lo = 0, hi = 1) {
+  n <- length(y)
+  if (n < 2 || min_gap <= 0) return(y)
+  ord <- order(y)
+  ys <- y[ord]
+  # Sweep up, pushing each label clear of the one below it.
+  for (i in 2:n) ys[i] <- max(ys[i], ys[i - 1] + min_gap)
+  # If the stack overflowed the top, shift it down and sweep back the other way.
+  over <- ys[n] - hi
+  if (over > 0) {
+    ys <- ys - over
+    for (i in rev(seq_len(n - 1))) ys[i] <- min(ys[i], ys[i + 1] - min_gap)
+    ys <- pmax(ys, lo)
+  }
+  out <- numeric(n)
+  out[ord] <- ys
+  out
 }
 
 plotgenes_categories <- function(gene_cat_list, data = wallace_dt,
@@ -182,6 +211,13 @@ plotgenes_wallace <- function(ps_dt_time, ps_dt_temp,
   dodge_temp <- position_dodge(width = diff(range(temps)) * dodge_frac)
   dodge_time <- position_dodge(width = diff(range(times)) * dodge_frac)
 
+  # End-of-line labels sit at each series' final value, nudged apart in y only
+  # where they would otherwise collide.
+  lab_temp <- ps_dt_temp |> filter(temp == max(temps))
+  lab_time <- ps_dt_time |> filter(time == max(times))
+  lab_temp$psup_lab <- spread_label_y(lab_temp$psup)
+  lab_time$psup_lab <- spread_label_y(lab_time$psup)
+
   # Individual traces are only meaningful for categories with >1 gene; a
   # single-gene category's trace would just overprint its own mean line.
   traces_temp <- ps_dt_temp_all |> group_by(category) |>
@@ -212,12 +248,10 @@ plotgenes_wallace <- function(ps_dt_time, ps_dt_temp,
   }
 
   plot_temp <- plot_temp +
-    # Fixed labels, anchored at each series' final value. geom_text_repel would
-    # nudge them off their own line (and silently drop them when crowded), so
-    # they shifted whenever the plot was resized or redrawn.
-    geom_text(size = 4, hjust = 0,
-      data = ps_dt_temp |> filter(temp == max(temps)),
-      aes(x = max(temps) + 0.03 * diff(range(temps)), y = psup)) +
+    # Labels in a fixed column at each series' final value, nudged vertically
+    # only where they would collide (see spread_label_y).
+    geom_text(size = 4, hjust = 0, data = lab_temp,
+      aes(x = max(temps) + 0.03 * diff(range(temps)), y = psup_lab)) +
     # Start just below the lowest temperature: the x scale has no expansion, so
     # data sitting exactly on the panel edge would be clipped in half.
     coord_cartesian(xlim = c(min(temps) - 1, 52)) +
@@ -252,9 +286,8 @@ plotgenes_wallace <- function(ps_dt_time, ps_dt_temp,
   time_max_x <- wallace_label_room(ps_dt_time[[idType]], times)
 
   plot_time <- plot_time +
-    geom_text(size = 4, hjust = 0,
-      data = subset(ps_dt_time, time == max(times)),
-      aes(x = max(times) + 0.03 * diff(range(times)), y = psup)) +
+    geom_text(size = 4, hjust = 0, data = lab_time,
+      aes(x = max(times) + 0.03 * diff(range(times)), y = psup_lab)) +
     scale_y_pSup() +
     # Only widen the lower limit when dodged error bars need the room, so the
     # default view still starts flush at time 0.
