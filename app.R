@@ -9,7 +9,6 @@ library(ggplot2)
 library(ggrepel)
 library(tidyverse)
 library(ggtext)
-library(shinyURL)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Data loading
@@ -81,7 +80,8 @@ plotgenes_categories <- function(gene_cat_list, data = wallace_dt,
                                  temps = c(30, 37, 42, 46), tempbreaks = temps,
                                  timeexps = c("30C.rep1", "46C.2min", "46C.4min", "46C.8min"),
                                  times = c(0, 2, 4, 8),
-                                 errorbars = FALSE, linewidth = 0.8,
+                                 errorbars = FALSE, error_type = "se",
+                                 show_traces = FALSE, linewidth = 0.8,
                                  idType = c("gene", "orf")) {
   names(temps) <- tempexps
   names(times) <- timeexps
@@ -102,37 +102,73 @@ plotgenes_categories <- function(gene_cat_list, data = wallace_dt,
       mutate(category = cat)
   }))
 
+  # Per-gene x positions, used to draw individual traces within each category.
+  ps_dt_temp_all$temp <- temps[ps_dt_temp_all$experiment]
+  ps_dt_time_all$time <- times[ps_dt_time_all$experiment]
+
+  # SEM uses the number of genes actually detected (non-NA) in the category.
   ps_dt_temp <- ps_dt_temp_all |>
     group_by(experiment, category) |>
-    summarise(sd = sd(psup, na.rm = TRUE), se = sd / sqrt(n()),
-              psup = mean(psup), psup.lo = psup - sd, psup.hi = psup + sd,
+    summarise(sd = sd(psup, na.rm = TRUE), se = sd / sqrt(sum(!is.na(psup))),
+              psup = mean(psup, na.rm = TRUE),
               gene = first(category), orf = first(category), .groups = "drop")
 
   ps_dt_time <- ps_dt_time_all |>
     group_by(experiment, category) |>
-    summarise(sd = sd(psup, na.rm = TRUE), se = sd / sqrt(n()),
-              psup = mean(psup), psup.lo = psup - sd, psup.hi = psup + sd,
+    summarise(sd = sd(psup, na.rm = TRUE), se = sd / sqrt(sum(!is.na(psup))),
+              psup = mean(psup, na.rm = TRUE),
               gene = first(category), orf = first(category), .groups = "drop")
 
   ps_dt_temp$temp <- temps[ps_dt_temp$experiment]
   ps_dt_time$time <- times[ps_dt_time$experiment]
 
-  plotgenes_wallace(ps_dt_time, ps_dt_temp, tempexps, temps, tempbreaks,
-                    timeexps, times, errorbars, linewidth, idType)
+  plotgenes_wallace(ps_dt_time, ps_dt_temp, ps_dt_time_all, ps_dt_temp_all,
+                    tempexps, temps, tempbreaks, timeexps, times,
+                    errorbars, error_type, show_traces, linewidth, idType)
 }
 
 plotgenes_wallace <- function(ps_dt_time, ps_dt_temp,
+                              ps_dt_time_all, ps_dt_temp_all,
                               tempexps = c("30C.rep2", "37C.8min", "42C.8min", "46C.8min"),
                               temps = c(30, 37, 42, 46), tempbreaks = temps,
                               timeexps = c("30C.rep1", "46C.2min", "46C.4min", "46C.8min"),
                               times = c(0, 2, 4, 8),
-                              errorbars = FALSE, linewidth = 0.8,
+                              errorbars = FALSE, error_type = "se",
+                              show_traces = FALSE, linewidth = 0.8,
                               idType = c("gene", "orf")) {
+  # Selected error statistic (SEM or SD), used for the error-bar half-widths.
+  ps_dt_temp$err <- ps_dt_temp[[error_type]]
+  ps_dt_time$err <- ps_dt_time[[error_type]]
+
+  # Individual traces are only meaningful for categories with >1 gene; a
+  # single-gene category's trace would just overprint its own mean line.
+  traces_temp <- ps_dt_temp_all |> group_by(category) |>
+    filter(n_distinct(orf) > 1) |> ungroup()
+  traces_time <- ps_dt_time_all |> group_by(category) |>
+    filter(n_distinct(orf) > 1) |> ungroup()
+
+  # \u2500\u2500 Temperature plot \u2500\u2500
   plot_temp <- ggplot(data = ps_dt_temp,
     aes(x = .data[["temp"]], y = .data[["psup"]],
-        ymin = .data[["psup.lo"]], ymax = .data[["psup.hi"]],
-        colour = .data[[idType]], label = .data[[idType]])) +
-    geom_line(linewidth = linewidth) +
+        colour = .data[[idType]], label = .data[[idType]]))
+
+  if (show_traces && nrow(traces_temp) > 0) {
+    plot_temp <- plot_temp + geom_line(
+      data = traces_temp,
+      aes(x = temp, y = psup, colour = category,
+          group = interaction(category, orf)),
+      alpha = getOption("psup.trace_alpha", 0.15), linewidth = linewidth,
+      inherit.aes = FALSE)
+  }
+
+  plot_temp <- plot_temp + geom_line(linewidth = linewidth)
+
+  if (errorbars) {
+    plot_temp <- plot_temp +
+      geom_pointrange(aes(ymin = psup - err, ymax = psup + err))
+  }
+
+  plot_temp <- plot_temp +
     geom_text_repel(size = 4,
       data = ps_dt_temp |> filter(temp == max(temps)),
       aes(x = max(temps) + 0.5, y = psup), xlim = c(46, 52)) +
@@ -143,11 +179,28 @@ plotgenes_wallace <- function(ps_dt_time, ps_dt_temp,
     scale_colour_dark2() +
     theme(legend.position = "none")
 
+  # \u2500\u2500 Time plot \u2500\u2500
   plot_time <- ggplot(data = ps_dt_time,
     aes(x = .data[["time"]], y = .data[["psup"]],
-        ymin = .data[["psup.lo"]], ymax = .data[["psup.hi"]],
-        colour = .data[[idType]], label = .data[[idType]])) +
-    geom_line(linewidth = linewidth) +
+        colour = .data[[idType]], label = .data[[idType]]))
+
+  if (show_traces && nrow(traces_time) > 0) {
+    plot_time <- plot_time + geom_line(
+      data = traces_time,
+      aes(x = time, y = psup, colour = category,
+          group = interaction(category, orf)),
+      alpha = getOption("psup.trace_alpha", 0.15), linewidth = linewidth,
+      inherit.aes = FALSE)
+  }
+
+  plot_time <- plot_time + geom_line(linewidth = linewidth)
+
+  if (errorbars) {
+    plot_time <- plot_time +
+      geom_pointrange(aes(ymin = psup - err, ymax = psup + err))
+  }
+
+  plot_time <- plot_time +
     geom_text_repel(size = 4,
       data = subset(ps_dt_time, time == max(times)),
       aes(x = max(times) + 0.1, y = psup), xlim = c(8, 12)) +
@@ -155,17 +208,14 @@ plotgenes_wallace <- function(ps_dt_time, ps_dt_temp,
     scale_colour_dark2() +
     theme(legend.position = "none")
 
-  if (errorbars) {
-    plot_temp <- plot_temp + geom_pointrange()
-    plot_time <- plot_time + geom_pointrange()
-  }
-
   list(plot_time = plot_time, plot_temp = plot_temp)
 }
 
-wallace_plot_from_input <- function(s, errorbars, idType) {
+wallace_plot_from_input <- function(s, show_traces = FALSE, errorbars = FALSE,
+                                    error_type = "se", idType) {
   ids <- splitstring(s)
-  plotgenes_categories(ids, errorbars = errorbars, idType = idType)
+  plotgenes_categories(ids, errorbars = errorbars, error_type = error_type,
+                       show_traces = show_traces, idType = idType)
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -248,7 +298,14 @@ wallace_ui <- function() {
       actionLink("category_examples", "Protein categories"),
       helpText(" "),
       selectInput("idType", "Identify by:", c("gene", "orf"), selected = "gene"),
-      checkboxInput("interval", "Show 95% intervals", FALSE),
+      checkboxInput("show_traces", "Show individual traces", FALSE),
+      checkboxInput("show_errorbars", "Show error bars", FALSE),
+      conditionalPanel(
+        condition = "input.show_errorbars",
+        radioButtons("error_type", NULL,
+                     choices = c("SEM" = "se", "SD" = "sd"),
+                     selected = "se", inline = TRUE)
+      ),
       selectInput("plotType", "Plot against:", c("time", "temperature"), selected = "time"),
       hr(),
       h5("Plot settings"),
@@ -289,10 +346,14 @@ dia_ui <- function() {
         uiOutput("end_temp_ui")
       ),
 
+      checkboxInput("show_traces", "Show individual traces", FALSE),
       checkboxInput("show_bioreps", "Show individual bioreps", FALSE),
+      checkboxInput("show_errorbars", "Show error bars", FALSE),
       conditionalPanel(
-        condition = "!input.show_bioreps",
-        checkboxInput("show_errorbars", "Show \u00b1SD error bars", FALSE)
+        condition = "input.show_errorbars",
+        radioButtons("error_type", NULL,
+                     choices = c("SEM" = "se", "SD" = "sd"),
+                     selected = "se", inline = TRUE)
       ),
 
       hr(),
@@ -371,8 +432,7 @@ ui <- function(request) {
   fluidPage(
     uiOutput("app_title"),
     uiOutput("app_body"),
-    mainPanel(uiOutput("citation_ui")),
-    shinyURL.ui()
+    mainPanel(uiOutput("citation_ui"))
   )
 }
 
@@ -421,7 +481,10 @@ server <- function(input, output, session) {
       else dia_build_time_plot()
     } else {
       plots <- wallace_plot_from_input(input$ids,
-        errorbars = input$interval, idType = input$idType)
+        show_traces = isTRUE(input$show_traces),
+        errorbars = isTRUE(input$show_errorbars),
+        error_type = if (is.null(input$error_type)) "se" else input$error_type,
+        idType = input$idType)
       if (input$plotType == "time") plots$plot_time
       else plots$plot_temp
     }
@@ -568,16 +631,33 @@ server <- function(input, output, session) {
     label_col <- if (dia_is_category_mode() && "category" %in% names(dat)) "category" else "display_label"
     mean_dat <- dat %>%
       group_by(.data[[label_col]], species, .data[[x_var]]) %>%
-      summarise(sd = sd(pSup, na.rm = TRUE), pSup = mean(pSup, na.rm = TRUE),
+      summarise(sd = sd(pSup, na.rm = TRUE),
+                se = sd / sqrt(sum(!is.na(pSup))),
+                pSup = mean(pSup, na.rm = TRUE),
                 .groups = "drop") %>%
-      mutate(pSup_lo = pmax(0, pSup - sd), pSup_hi = pmin(1, pSup + sd),
-             display_label = .data[[label_col]])
-    if (isTRUE(input$show_bioreps)) {
-      biorep_dat <- dat %>% mutate(display_label = .data[[label_col]])
-      list(mean = mean_dat, bioreps = biorep_dat)
-    } else {
-      list(mean = mean_dat, bioreps = NULL)
-    }
+      mutate(display_label = .data[[label_col]])
+
+    # Raw bioreps as points (existing feature).
+    biorep_dat <- if (isTRUE(input$show_bioreps)) {
+      dat %>% mutate(display_label = .data[[label_col]])
+    } else NULL
+
+    # Individual gene traces (per gene, per species) drawn in the group colour.
+    # Only for categories that actually contain more than one gene; a
+    # single-gene category's trace would just overprint its own mean line.
+    trace_dat <- if (isTRUE(input$show_traces) && dia_is_category_mode()) {
+      cats <- dia_gene_list()
+      multi <- names(cats)[vapply(cats, length, integer(1)) > 1]
+      if (length(multi) > 0) {
+        dat %>%
+          filter(category %in% multi) %>%
+          group_by(category, species, orf, .data[[x_var]]) %>%
+          summarise(pSup = mean(pSup, na.rm = TRUE), .groups = "drop") %>%
+          mutate(display_label = category)
+      } else NULL
+    } else NULL
+
+    list(mean = mean_dat, bioreps = biorep_dat, traces = trace_dat)
   }
 
   # ── DIA plot builder ────────────────────────────────────────────────────
@@ -586,17 +666,33 @@ server <- function(input, output, session) {
     plot_data <- dia_summarize_plot_data(dat, x_var)
     mean_dat <- plot_data$mean
     biorep_dat <- plot_data$bioreps
+    trace_dat <- plot_data$traces
 
     p <- ggplot(mean_dat, aes(
       x = .data[[x_var]], y = pSup,
       colour = display_label, shape = species,
       group = interaction(display_label, species)
-    )) +
-      geom_line(linewidth = 0.8) +
-      geom_point(size = 3)
+    ))
 
-    if (!isTRUE(input$show_bioreps) && isTRUE(input$show_errorbars)) {
+    # Faint individual gene traces, drawn under the group mean line.
+    if (!is.null(trace_dat) && nrow(trace_dat) > 0) {
+      p <- p + geom_line(
+        data = trace_dat,
+        aes(x = .data[[x_var]], y = pSup, colour = display_label,
+            group = interaction(display_label, species, orf)),
+        alpha = getOption("psup.trace_alpha", 0.15), linewidth = 0.8,
+        inherit.aes = FALSE)
+    }
+
+    p <- p + geom_line(linewidth = 0.8) + geom_point(size = 3)
+
+    if (isTRUE(input$show_errorbars)) {
+      etype <- if (is.null(input$error_type)) "se" else input$error_type
+      err_dat <- mean_dat %>% mutate(
+        .err = .data[[etype]],
+        pSup_lo = pmax(0, pSup - .err), pSup_hi = pmin(1, pSup + .err))
       p <- p + geom_errorbar(
+        data = err_dat,
         aes(ymin = pSup_lo, ymax = pSup_hi),
         width = (x_max - x_min) * 0.015, linewidth = 0.4)
     }
@@ -661,9 +757,6 @@ server <- function(input, output, session) {
       HTML(paste0("<b>Not found:</b> ", paste(missing, collapse = ", ")))
     }
   })
-
-  # ── shinyURL ─────────────────────────────────────────────────────────────
-  shinyURL.server(session)
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
