@@ -69,8 +69,10 @@ scale_colour_dark2 <- function(...) {
 # ══════════════════════════════════════════════════════════════════════════════
 
 scale_time <- function(name = expression("Minutes at " * 46 * degree ~ C * ""),
-                       text = TRUE) {
-  mylim <- if (text) c(0, 9.9) else c(0, 8)
+                       text = TRUE, min_x = 0) {
+  # limits here filter data (unlike coord_cartesian), so min_x must leave room
+  # for any x dodge applied to the error bars or those points get dropped.
+  mylim <- if (text) c(min_x, 9.9) else c(min_x, 8)
   scale_x_continuous(name, expand = c(0.01, 0.1), limits = mylim,
                      breaks = c(0, 2, 4, 8))
 }
@@ -106,6 +108,15 @@ plotgenes_categories <- function(gene_cat_list, data = wallace_dt,
   ps_dt_temp_all$temp <- temps[ps_dt_temp_all$experiment]
   ps_dt_time_all$time <- times[ps_dt_time_all$experiment]
 
+  # Colour is a discrete scale, so ggplot assigns palette slots in level order.
+  # Ordering categories by their position in the input (rather than the default
+  # alphabetical order) keeps existing colours stable when a category is added.
+  # The summaries below carry this factor into the gene/orf colour columns.
+  ps_dt_temp_all$category <- factor(ps_dt_temp_all$category,
+                                    levels = names(gene_cat_list))
+  ps_dt_time_all$category <- factor(ps_dt_time_all$category,
+                                    levels = names(gene_cat_list))
+
   # SEM uses the number of genes actually detected (non-NA) in the category.
   ps_dt_temp <- ps_dt_temp_all |>
     group_by(experiment, category) |>
@@ -140,6 +151,13 @@ plotgenes_wallace <- function(ps_dt_time, ps_dt_temp,
   ps_dt_temp$err <- ps_dt_temp[[error_type]]
   ps_dt_time$err <- ps_dt_time[[error_type]]
 
+  # Offset each category's error bars slightly along x so that overlapping bars
+  # stay readable. A dodge (not a random jitter) keeps figures reproducible.
+  # Width is a fraction of the x span, so it scales with the axis.
+  dodge_frac <- getOption("psup.dodge_frac", 0.04)
+  dodge_temp <- position_dodge(width = diff(range(temps)) * dodge_frac)
+  dodge_time <- position_dodge(width = diff(range(times)) * dodge_frac)
+
   # Individual traces are only meaningful for categories with >1 gene; a
   # single-gene category's trace would just overprint its own mean line.
   traces_temp <- ps_dt_temp_all |> group_by(category) |>
@@ -165,14 +183,17 @@ plotgenes_wallace <- function(ps_dt_time, ps_dt_temp,
 
   if (errorbars) {
     plot_temp <- plot_temp +
-      geom_pointrange(aes(ymin = psup - err, ymax = psup + err))
+      geom_pointrange(aes(ymin = psup - err, ymax = psup + err),
+                      position = dodge_temp)
   }
 
   plot_temp <- plot_temp +
     geom_text_repel(size = 4,
       data = ps_dt_temp |> filter(temp == max(temps)),
       aes(x = max(temps) + 0.5, y = psup), xlim = c(46, 52)) +
-    coord_cartesian(xlim = c(30, 52)) +
+    # Start just below the lowest temperature: the x scale has no expansion, so
+    # data sitting exactly on the panel edge would be clipped in half.
+    coord_cartesian(xlim = c(min(temps) - 1, 52)) +
     scale_x_continuous("Temperature (\u00b0C) of 8 min. treatment",
                        breaks = tempbreaks, labels = tempbreaks, expand = c(0, 0)) +
     scale_y_pSup() +
@@ -197,14 +218,19 @@ plotgenes_wallace <- function(ps_dt_time, ps_dt_temp,
 
   if (errorbars) {
     plot_time <- plot_time +
-      geom_pointrange(aes(ymin = psup - err, ymax = psup + err))
+      geom_pointrange(aes(ymin = psup - err, ymax = psup + err),
+                      position = dodge_time)
   }
 
   plot_time <- plot_time +
     geom_text_repel(size = 4,
       data = subset(ps_dt_time, time == max(times)),
       aes(x = max(times) + 0.1, y = psup), xlim = c(8, 12)) +
-    scale_y_pSup() + scale_time() +
+    scale_y_pSup() +
+    # Only widen the lower limit when dodged error bars need the room, so the
+    # default view still starts flush at time 0.
+    scale_time(min_x = if (errorbars)
+                 min(times) - diff(range(times)) * dodge_frac else min(times)) +
     scale_colour_dark2() +
     theme(legend.position = "none")
 
@@ -280,6 +306,9 @@ dia_add_categories <- function(dat, cats) {
     )) %>%
     left_join(gene_to_cat, by = c("query_match" = "query_gene")) %>%
     filter(!is.na(category)) %>%
+    # Order categories by their position in the input so that adding one leaves
+    # the existing categories' colours unchanged (see plotgenes_categories).
+    mutate(category = factor(category, levels = names(cats))) %>%
     select(-query_match)
 }
 
