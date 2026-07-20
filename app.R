@@ -6,7 +6,7 @@
 
 library(shiny)
 library(ggplot2)
-library(ggrepel)
+#library(ggrepel)
 library(tidyverse)
 library(ggtext)
 
